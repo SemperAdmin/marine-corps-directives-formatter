@@ -2,9 +2,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, Header, ImageRun, VerticalPositionRelativeFrom, HorizontalPositionRelativeFrom, Footer, PageNumber, IParagraphOptions } from 'docx';
+import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, Header, Footer, ImageRun, convertInchesToTwip, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, PageNumber, NumberFormat } from 'docx';
 import { saveAs } from 'file-saver';
 import { fetchImageAsBase64 } from '@/lib/fetch-image';
+
 import { DOC_SETTINGS } from '@/lib/doc-settings';
 import { createFormattedParagraph } from '@/lib/paragraph-formatter';
 import { UNITS, Unit } from '@/lib/units';
@@ -12,23 +13,247 @@ import { SSICS } from '@/lib/ssic';
 import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
+/** 
+ * Simple and accurate text width estimation for Times New Roman 12pt 
+ * Based on actual measurements in Word documents 
+ */ 
+const estimateTextWidth = (text: string): number => { 
+  if (!text || !text.trim()) return 0; 
+  
+  // For Times New Roman 12pt in Word/docx: 
+  // Average character width is approximately 7-8 points 
+  // In twips: 7.5 points * 20 twips/point = 150 twips per character 
+  // This is a conservative estimate that works well in practice 
+  
+  const avgCharWidthTwips = 150; // Conservative estimate 
+  return text.trim().length * avgCharWidthTwips; 
+}; 
+
+/** 
+ * Calculate the starting position so the longest text ends near the right margin 
+ */ 
+const calculateAlignmentPosition = ( 
+  ssic: string, 
+  originatorCode: string, 
+  date: string, 
+  pageWidth: number = 12240, // 8.5 inches in twips  
+  rightMargin: number = 1440   // 1 inch right margin 
+): number => { 
+  // Clean the texts 
+  const texts = [ 
+    ssic || "", 
+    originatorCode || "", 
+    date || "" 
+  ].filter(text => text.trim()).map(text => text.trim()); 
+  
+  if (texts.length === 0) { 
+    return 8280; // Default to 5.75 inches if no content 
+  } 
+  
+  // Find the longest text by character count (simpler and more reliable) 
+  const longestText = texts.reduce((longest, current) => 
+    current.length > longest.length ? current : longest, ""); 
+  
+  // Estimate width of longest text 
+  const longestWidth = estimateTextWidth(longestText); 
+  
+  // Calculate where text should start so it ends at right margin 
+  const rightBoundary = pageWidth - rightMargin; // 10800 twips (7.5 inches from left) 
+  const startPosition = rightBoundary - longestWidth; 
+  
+  // Don't go too far left - minimum 4 inches from left margin 
+  const minPosition = 5760; // 4 inches * 1440 twips/inch 
+  const finalPosition = Math.max(startPosition, minPosition); 
+  
+  // Debug info 
+  console.log('=== SSIC Alignment Debug ==='); 
+  console.log(`Longest text: "${longestText}" (${longestText.length} chars)`); 
+  console.log(`Estimated width: ${longestWidth} twips (${(longestWidth/1440).toFixed(2)} inches)`); 
+  console.log(`Right boundary: ${rightBoundary} twips (${(rightBoundary/1440).toFixed(2)} inches)`); 
+  console.log(`Calculated start: ${startPosition} twips (${(startPosition/1440).toFixed(2)} inches)`); 
+  console.log(`Final position: ${finalPosition} twips (${(finalPosition/1440).toFixed(2)} inches)`); 
+  console.log('============================'); 
+  
+  return finalPosition; 
+}; 
+
+// Even simpler alternative - use fixed position based on typical content 
+const calculateSimplePosition = ( 
+  ssic: string, 
+  originatorCode: string, 
+  date: string 
+): number => { 
+  // Get the character count of longest text 
+  const texts = [ssic || "", originatorCode || "", date || ""] 
+    .filter(text => text.trim()) 
+    .map(text => text.trim()); 
+  
+  if (texts.length === 0) return 8280; 
+  
+  const maxLength = Math.max(...texts.map(text => text.length)); 
+  
+  // Position based on content length: 
+  // Short content (< 15 chars): start at 5.75 inches 
+  // Medium content (15-25 chars): start at 5.25 inches  
+  // Long content (> 25 chars): start at 4.75 inches 
+  
+  if (maxLength <= 15) { 
+    return 8280; // 5.75 inches 
+  } else if (maxLength <= 25) { 
+    return 7560; // 5.25 inches 
+  } else { 
+    return 6840; // 4.75 inches 
+  } 
+};
+
+const getPreciseAlignmentPosition = (maxCharLength: number): number => {
+  // Convert inches to twips (1 inch = 1440 twips)
+  
+  if (maxCharLength >= 23) {
+    return 6480; // 4.5 inches - for longest content (23+ chars)
+  } else if (maxCharLength >= 21) {
+    return 6624; // 4.6 inches - for 21-22 chars
+  } else if (maxCharLength >= 19) {
+    return 6768; // 4.7 inches - for 19-20 chars 
+  } else if (maxCharLength >= 17) {
+    return 6912; // 4.8 inches - for 17-18 chars
+  } else if (maxCharLength >= 15) {
+    return 7056; // 4.9 inches - for 15-16 chars
+  } else if (maxCharLength >= 13) {
+    return 7200; // 5.0 inches - for 13-14 chars
+  } else if (maxCharLength >= 11) {
+    return 7344; // 5.1 inches - for 11-12 chars
+  } else if (maxCharLength >= 9) {
+    return 7488; // 5.2 inches - for 9-10 chars
+  } else {
+    return 7632; // 5.3 inches - for shorter content (< 9 chars)
+  }
+};
+
+// Add a helper function for header alignment (add this near the other alignment functions)
+const getHeaderAlignmentPosition = (ssic: string, date: string): number => {
+  const maxLength = Math.max(ssic.length, date.length);
+  return getPreciseAlignmentPosition(maxLength);
+};
+
+interface DocumentHeader {
+  ssic_code: string;
+  sponsor_code: string;
+  date_signed: string;
+  consecutive_point?: number;
+  revision_suffix?: string;
+  designationLine?: string;
+}
 
 interface ParagraphData {
   id: number;
   level: number;
   content: string;
   acronymError?: string;
+  isMandatory?: boolean;
+  title?: string;
 }
 
-type EndorsementLevel = 'FIRST' | 'SECOND' | 'THIRD' | 'FOURTH' | 'FIFTH' | 'SIXTH' | '';
+
 
 interface FormData {
-  documentType: 'basic' | 'endorsement';
-  endorsementLevel: EndorsementLevel;
-  basicLetterReference: string;
+  documentType: 'basic' | 'endorsement' | 'mco' | 'mcbul' | 'supplement';
+  
+  // ✅ NEW: Essential Directive Elements
+  ssic_code: string; // Standard Subject Identification Code
+  consecutive_point?: number; // Sequential number within SSIC group (Orders only)
+  revision_suffix?: string; // Letter indicating revision (A, B, C...)
+  sponsor_code: string; // Originating office identifier
+  date_signed: string; // Date directive was officially signed (DD MMM YYYY)
+  designationLine?: string; // ✅ ADD: New designation line field
+  
+  // ✅ REMOVED: Directive Authority and Dating fields
+  // directiveAuthority: DirectiveAuthority;
+  // effectiveDate?: string;
+  // signatureDate: string;
+  // reviewDate?: string;
+  supersedes?: string[];
+  directiveSubType: 'policy' | 'procedural' | 'administrative' | 'operational';
+  policyScope?: 'marine-corps-wide' | 'hqmc-only' | 'field-commands';
+  cancellationDate?: string; // MCBul only
+  parentDirective?: string; // Supplement only
+  affectedSections?: string[]; // Supplement only
+  issuingAuthority: string;
+  securityClassification: 'unclassified' | 'fouo' | 'confidential' | 'secret';
+  distributionScope: 'total-force' | 'active-duty' | 'reserves';
+  reviewCycle?: 'annual' | 'biennial' | 'triennial';
+  
+  // ✅ NEW: Distribution Statement
+  distributionStatement: {
+    code: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X';
+    reason?: string;
+    dateOfDetermination?: string;
+    originatingCommand?: string;
+  };
+
+  // ✅ EXISTING: Standard fields
+  startingReferenceLevel: string;
+  startingEnclosureNumber: string;
+  line1: string;
+  line2: string;
+  line3: string;
+  ssic: string; // Keep for backward compatibility, will map to ssic_code
+  originatorCode: string; // Keep for backward compatibility, will map to sponsor_code
+  date: string; // Keep for backward compatibility, will map to date_signed
+  from: string;
+  to: string;
+  subj: string;
+  sig: string;
+  delegationText: string[];
+  startingPageNumber: number;
+  previousPackagePageCount: number;
+  savedAt: string;
+  references: string[];
+  enclosures: string[];
+  distribution: DistributionEntry[];
+  paragraphs: ParagraphData[];
+  
+  // ✅ ADD: Missing reference-related properties
   referenceWho: string;
   referenceType: string;
   referenceDate: string;
+  basicLetterReference: string;
+  
+  // ✅ ADD: Missing endorsement property
+  endorsementLevel?: string;
+}
+
+interface SavedLetter {
+  id: string;
+  documentType: string;
+  
+  // ✅ NEW: Essential Directive Elements
+  ssic_code?: string;
+  consecutive_point?: number;
+  revision_suffix?: string;
+  sponsor_code?: string;
+  date_signed?: string;
+  designationLine?: string; // ✅ ADD: Missing designationLine property
+  directiveAuthority?: DirectiveAuthority;
+  effectiveDate?: string;
+  signatureDate?: string;
+  reviewDate?: string;
+  supersedes?: string[];
+  directiveSubType?: string;
+  policyScope?: string;
+  cancellationDate?: string;
+  parentDirective?: string;
+  affectedSections?: string[];
+  issuingAuthority?: string;
+  securityClassification?: string;
+  distributionScope?: string;
+  reviewCycle?: string;
+  distributionStatement?: {
+    code: string;
+    reason?: string;
+    dateOfDetermination?: string;
+    originatingCommand?: string;
+  };
   startingReferenceLevel: string;
   startingEnclosureNumber: string;
   line1: string;
@@ -41,28 +266,410 @@ interface FormData {
   to: string;
   subj: string;
   sig: string;
-  delegationText: string;
+  delegationText: string[];
   startingPageNumber: number;
   previousPackagePageCount: number;
-}
-
-interface SavedLetter extends FormData {
-  id: string;
   savedAt: string;
-  vias: string[];
   references: string[];
   enclosures: string[];
-  copyTos: string[];
+  distribution: DistributionEntry[];
   paragraphs: ParagraphData[];
 }
 
 
 interface ValidationState {
-  ssic: { isValid: boolean; message: string; };
   subj: { isValid: boolean; message: string; };
   from: { isValid: boolean; message: string; };
-  to: { isValid: boolean; message: string; };
 }
+
+interface DistributionEntry {
+  type: 'pcn' | 'iac' | 'manual';
+  code: string;
+  description: string;
+  copyCount: number;
+}
+
+// Add this DirectiveAuthority type definition after the existing interfaces
+interface DirectiveAuthority {
+  level: 'commandant' | 'assistant-commandant' | 'deputy-commandant' | 'commanding-general' | 'commanding-officer';
+  title: string;
+  delegated?: boolean;
+  delegatedTo?: string;
+}
+
+// ✅ NEW: Directive Number Interface
+interface DirectiveNumber {
+  ssic: string; // 4-5 digit code
+  consecutivePoint: string; // Sequential ID
+  revision?: string; // A, B, C (excluding I, O, Q)
+}
+
+// ✅ NEW: Authority Matrix
+const DIRECTIVE_AUTHORITY_MATRIX = {
+  mco: {
+    'marine-corps-wide': ['Commandant of the Marine Corps'],
+    'field-commands': ['Commanding Generals', 'Commanding Officers']
+  },
+  mcbul: {
+    'announcement': ['All authorized signers'],
+    'notification': ['Appropriate command level']
+  },
+  supplement: {
+    'modification': ['Original issuing authority or higher']
+  }
+};
+
+// ✅ NEW: Validation Function
+// ✅ UPDATED: Enhanced validation for directive elements
+const validateDirectiveElements = (formData: FormData): string[] => {
+  const errors: string[] = [];
+
+  // Required fields for all directives
+  if (!formData.ssic_code?.trim()) {
+    errors.push('SSIC Code is required for directives');
+  }
+
+  if (!formData.sponsor_code?.trim()) {
+    errors.push('Sponsor Code is required for directives');
+  }
+
+  if (!formData.date_signed) {
+    errors.push('Date Signed is required for directives');
+  }
+
+  // MCO-specific validation
+  if (formData.documentType === 'mco' && !formData.consecutive_point) {
+    errors.push('Consecutive Point number is required for MCOs');
+  }
+
+  // Revision suffix validation
+  if (formData.revision_suffix && !/^[A-Z]$/.test(formData.revision_suffix)) {
+    errors.push('Revision suffix must be a single letter (A-Z)');
+  }
+
+  // Exclude problematic letters
+  if (formData.revision_suffix && ['I', 'O', 'Q'].includes(formData.revision_suffix)) {
+    errors.push('Revision suffix cannot be I, O, or Q (easily confused letters)');
+  }
+
+  return errors;
+};
+
+// ✅ UPDATED: Enhanced SSIC-Based Numbering System
+const generateDirectiveNumber = (formData: FormData): string => {
+  const { ssic_code, consecutive_point, revision_suffix, documentType } = formData;
+  
+  const formatNavalDate = (date: Date): string => {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const day = date.getDate();
+    const month = months[date.getMonth()];
+    const year = date.getFullYear().toString().slice(-2);
+    return `${day} ${month} ${year}`;
+  };
+  
+  switch (documentType) {
+    case 'mco': {
+      let number = `MCO ${ssic_code}`;
+      if (consecutive_point) {
+        number += `.${consecutive_point}`;
+      }
+      if (revision_suffix) {
+        number += revision_suffix;
+      }
+      return number;
+    }
+    case 'mcbul': {
+      const dateStr = formData.date_signed ? 
+        formatNavalDate(new Date(formData.date_signed)) : 
+        formatNavalDate(new Date());
+      return `MCBul ${ssic_code} dtd ${dateStr}`;
+    }
+    case 'supplement': {
+      let number = `Supplement to ${formData.parentDirective || 'MCO [Parent]'}`;
+      if (revision_suffix) {
+        number += ` ${revision_suffix}`;
+      }
+      return number;
+    }
+    default:
+      return '';
+  }
+};
+
+// ✅ NEW: Template Generation
+const generateDirectiveTemplate = (type: 'mco' | 'mcbul' | 'supplement') => {
+  const templates = {
+    mco: {
+      requiredSections: ['situation', 'mission', 'execution', 'administration', 'command'],
+      formatRequirements: { tableOfContents: true, distributionStatement: true }
+    },
+    mcbul: {
+      requiredSections: ['purpose', 'background', 'action', 'cancellation'],
+      formatRequirements: { cancellationDate: true }
+    },
+    supplement: {
+      requiredSections: ['purpose', 'applicability', 'changes', 'effective'],
+      formatRequirements: { parentReference: true }
+    }
+  };
+  return templates[type];
+};
+
+// Common PCN codes for Marine Corps units
+const COMMON_PCN_CODES = [
+  { code: 'PCN-1', description: 'Headquarters Marine Corps' },
+  { code: 'PCN-2', description: 'Marine Corps Base' },
+  { code: 'PCN-3', description: 'Marine Expeditionary Force' },
+  { code: 'PCN-4', description: 'Marine Division' },
+  { code: 'PCN-5', description: 'Marine Aircraft Wing' },
+  { code: 'PCN-6', description: 'Marine Logistics Group' },
+  { code: 'PCN-7', description: 'Marine Expeditionary Unit' },
+  { code: 'PCN-8', description: 'Marine Corps Recruit Depot' },
+  { code: 'PCN-9', description: 'Marine Corps Air Station' },
+  { code: 'PCN-10', description: 'Marine Corps Combat Development Command' }
+];
+
+// Common IAC codes
+const COMMON_IAC_CODES = [
+  { code: 'IAC-A', description: 'All Marine Corps Activities' },
+  { code: 'IAC-B', description: 'Marine Corps Bases and Stations' },
+  { code: 'IAC-C', description: 'Commanding Officers' },
+  { code: 'IAC-D', description: 'Division Level Commands' },
+  { code: 'IAC-E', description: 'Expeditionary Units' },
+  { code: 'IAC-F', description: 'Fleet Marine Force' },
+  { code: 'IAC-G', description: 'Ground Combat Element' },
+  { code: 'IAC-H', description: 'Headquarters Elements' }
+];
+
+// ✅ NEW: Common Sponsor Codes
+const COMMON_SPONSOR_CODES = [
+  { code: 'ARDB', description: 'Manpower and Reserve Affairs' },
+  { code: 'MM', description: 'Manpower Management' },
+  { code: 'G-1', description: 'Personnel' },
+  { code: 'MMPR', description: 'Manpower Plans and Policy' },
+  { code: 'G-2', description: 'Intelligence' },
+  { code: 'G-3', description: 'Operations and Training' },
+  { code: 'G-4', description: 'Logistics' },
+  { code: 'G-6', description: 'Communications' },
+  { code: 'G-8', description: 'Programs and Resources' },
+  { code: 'SJA', description: 'Staff Judge Advocate' },
+  { code: 'HQMC', description: 'Headquarters Marine Corps' },
+  { code: 'MCCDC', description: 'Marine Corps Combat Development Command' },
+  { code: 'MCRC', description: 'Marine Corps Recruiting Command' }
+];
+
+// ✅ NEW: Validation Function for Distribution Statement
+const validateDistributionStatement = (distributionStatement: FormData['distributionStatement']): string[] => {
+  const errors: string[] = [];
+  const statement = DISTRIBUTION_STATEMENTS[distributionStatement.code];
+  
+  if (statement.requiresFillIns && 'fillInFields' in statement) {
+    const typedStatement = statement as typeof statement & { fillInFields: string[] };
+    if (typedStatement.fillInFields?.includes('reason') && !distributionStatement.reason) {
+      errors.push('Reason for restriction is required for this distribution statement');
+    }
+    if (typedStatement.fillInFields?.includes('dateOfDetermination') && !distributionStatement.dateOfDetermination) {
+      errors.push('Date of determination is required for this distribution statement');
+    }
+    if (typedStatement.fillInFields?.includes('originatingCommand') && !distributionStatement.originatingCommand) {
+      errors.push('Originating command is required for this distribution statement');
+    }
+  }
+  
+  return errors;
+};
+
+// Add after existing constants
+const DISTRIBUTION_STATEMENTS = {
+  A: {
+    code: 'A',
+    text: 'DISTRIBUTION STATEMENT A: Approved for public release; distribution is unlimited.',
+    requiresFillIns: false,
+    description: 'Unclassified information with no distribution restrictions'
+  },
+  B: {
+    code: 'B',
+    text: 'DISTRIBUTION STATEMENT B: Distribution authorized to U.S. Government agencies only; (fill in reason) (date of determination). Other requests for this document will be referred to (insert originating command).',
+    requiresFillIns: true,
+    fillInFields: ['reason', 'dateOfDetermination', 'originatingCommand'],
+    description: 'Information restricted to US Government agencies'
+  },
+  C: {
+    code: 'C',
+    text: 'DISTRIBUTION STATEMENT C: Distribution authorized to U.S. Government agencies and their contractors; (fill in reason) (date of determination). Other requests for this document will be referred to (insert originating command).',
+    requiresFillIns: true,
+    fillInFields: ['reason', 'dateOfDetermination', 'originatingCommand'],
+    description: 'Extends distribution to government contractors'
+  },
+  D: {
+    code: 'D',
+    text: 'DISTRIBUTION STATEMENT D: Distribution authorized to DOD and DOD contractors only; (fill in reason) (date of determination). Other U.S. requests shall be referred to (insert originating command).',
+    requiresFillIns: true,
+    fillInFields: ['reason', 'dateOfDetermination', 'originatingCommand'],
+    description: 'Limited to Department of Defense personnel and contractors'
+  },
+  E: {
+    code: 'E',
+    text: 'DISTRIBUTION STATEMENT E: Distribution authorized to DOD components only; (fill in reason) (date of determination). Other requests must be referred to (insert originating command).',
+    requiresFillIns: true,
+    fillInFields: ['reason', 'dateOfDetermination', 'originatingCommand'],
+    description: 'Most restrictive unclassified distribution'
+  },
+  F: {
+    code: 'F',
+    text: 'DISTRIBUTION STATEMENT F: Further dissemination only as directed by (insert originating command) (date of determination) or higher DOD authority.',
+    requiresFillIns: true,
+    fillInFields: ['originatingCommand', 'dateOfDetermination'],
+    description: 'Highly controlled distribution'
+  },
+  X: {
+    code: 'X',
+    text: 'DISTRIBUTION STATEMENT X: Distribution authorized to U.S. Government agencies and private individuals or enterprises eligible to obtain export-controlled technical data in accordance with OPNAVINST 5510.161; (date of determination). Other requests shall be referred to (originating command).',
+    requiresFillIns: true,
+    fillInFields: ['dateOfDetermination', 'originatingCommand'],
+    description: 'Technical data subject to export control laws'
+  }
+};
+
+const COMMON_RESTRICTION_REASONS = [
+  'administrative/operational use',
+  'contractor performance evaluation',
+  'premature dissemination',
+  'proprietary information',
+  'test and evaluation',
+  'vulnerability analysis',
+  'critical technology',
+  'operational security'
+];
+
+// ✅ NEW: Field Command Signature Authority Rules
+const FIELD_COMMAND_SIGNATURE_AUTHORITY = {
+  principal_authority: {
+    title: "Commanding Officer, Commanding General, or Officer in Charge",
+    description: "Commanding Officer, Commanding General, or Officer in Charge",
+    scope: "All directives within command authority"
+  },
+  delegation_requirements: {
+    format: "Must be in writing",
+    to_whom: "Titles, not individual names",
+    redelegation: "Permitted with 'by direction' designation"
+  },
+  common_delegations: {
+    chief_of_staff: {
+      title: "Chief of Staff",
+      authority: "By direction"
+    },
+    deputy: {
+      title: "Deputy",
+      authority: "By direction"
+    },
+    executive_officer: {
+      title: "Executive Officer",
+      authority: "By direction"
+    },
+    assistant_chief_of_staff: {
+      title: "Assistant Chief of Staff",
+      authority: "By direction",
+      scope: "Functional area only"
+    }
+  }
+};
+
+// ✅ NEW: Acting Authority Designations
+const ACTING_AUTHORITY_DESIGNATIONS = {
+  formal_appointment: {
+    requirement: "Must be formally appointed or delegated",
+    signature_format: "Name followed by 'Acting'"
+  },
+  temporary_replacement: {
+    principal_official: {
+      format: "I. M. ACTING\nCommandant of the Marine Corps\nActing"
+    },
+    assistant_principal: {
+      format: "I. M. ACTING\nAssistant Commandant\nof the Marine Corps\nActing"
+    },
+    deputy_commandant: {
+      format: "I. M. ACTING\nDeputy Commandant for\nManpower and Reserve Affairs\nActing"
+    }
+  },
+  field_command_acting: {
+    chief_of_staff: {
+      format: "I. M. ACTING\nChief of Staff\nActing"
+    },
+    deputy: {
+      format: "I. M. ACTING\nDeputy\nActing"
+    },
+    executive_officer: {
+      format: "I. M. ACTING\nExecutive Officer\nActing"
+    }
+  }
+};
+
+// ✅ NEW: Field Command Signature Block Formats
+const FIELD_COMMAND_SIGNATURE_FORMATS = {
+  commanding_officer: {
+    name_line: "Full name in all caps or preferred format",
+    title_line: "Not shown (principal official)"
+  },
+  by_direction: {
+    chief_of_staff: {
+      name_line: "I. M. CHIEF",
+      title_line: "Chief of Staff\nBy direction"
+    },
+    deputy: {
+      name_line: "I. M. DEPUTY",
+      title_line: "Deputy\nBy direction"
+    },
+    executive_officer: {
+      name_line: "I. M. EXECUTIVE",
+      title_line: "Executive Officer\nBy direction"
+    }
+  }
+};
+
+// ✅ NEW: Helper function to generate signature block based on authority type
+const generateSignatureBlock = (authorityType: string, name: string, isActing: boolean = false): { nameLine: string; titleLine: string } => {
+  const formats = FIELD_COMMAND_SIGNATURE_FORMATS;
+  
+  if (authorityType === 'commanding_officer') {
+    return {
+      nameLine: name.toUpperCase(),
+      titleLine: isActing ? "Acting" : ""
+    };
+  }
+  
+  if (formats.by_direction[authorityType as keyof typeof formats.by_direction]) {
+    const format = formats.by_direction[authorityType as keyof typeof formats.by_direction];
+    return {
+      nameLine: name.toUpperCase(),
+      titleLine: isActing ? format.title_line.replace('\n', '\n') + '\nActing' : format.title_line
+    };
+  }
+  
+  return {
+    nameLine: name.toUpperCase(),
+    titleLine: isActing ? "Acting" : ""
+  };
+};
+
+// ✅ NEW: Validation function for signature authority
+const validateSignatureAuthority = (signerName: string, authorityType: string, isDelegated: boolean): string[] => {
+  const errors: string[] = [];
+  
+  if (!signerName.trim()) {
+    errors.push('Signer name is required');
+  }
+  
+  if (!authorityType) {
+    errors.push('Authority type must be specified');
+  }
+  
+  if (isDelegated && !FIELD_COMMAND_SIGNATURE_AUTHORITY.common_delegations[authorityType as keyof typeof FIELD_COMMAND_SIGNATURE_AUTHORITY.common_delegations]) {
+    errors.push('Invalid delegation authority type');
+  }
+  
+  return errors;
+};
 
 // Helper to split string into chunks without breaking words
 const splitSubject = (str: string, chunkSize: number): string[] => {
@@ -87,6 +694,94 @@ const splitSubject = (str: string, chunkSize: number): string[] => {
     return chunks;
 };
 
+/**
+ * Creates properly formatted subject line paragraphs for Word documents
+ * Handles multi-line subjects with correct indentation
+ */
+const createFormattedSubjectLine = (subject: string): Paragraph[] => {
+  // Split subject into 57-character chunks without breaking words
+  const lines = splitSubject(subject, 57);
+  const paragraphs: Paragraph[] = [];
+
+  lines.forEach((line, index) => {
+    if (index === 0) {
+      // First line with "Subj:" label
+      paragraphs.push(new Paragraph({
+        children: [
+          new TextRun({
+            text: `Subj:\t${line}`,
+            font: "Times New Roman",
+            size: 24
+          })
+        ],
+        tabStops: [{ type: TabStopType.LEFT, position: 720 }] // 0.5 inch tab stop
+        // Removed spacing: { after: 120 } to eliminate unwanted spacing
+      }));
+    } else {
+      // Continuation lines with proper indentation
+      paragraphs.push(new Paragraph({
+        children: [
+          new TextRun({
+            text: `\t${line}`,
+            font: "Times New Roman",
+            size: 24
+          })
+        ],
+        tabStops: [{ type: TabStopType.LEFT, position: 720 }] // Same tab stop for alignment
+        // Removed spacing: { after: 120 } to eliminate unwanted spacing
+      }));
+    }
+  });
+
+  return paragraphs;
+};
+
+// Add this function after the createFormattedSubjectLine function (around line 695)
+const createFormattedReferenceLine = (reference: string, refLetter: string, isFirst: boolean): Paragraph[] => {
+  // Split reference into 57-character chunks without breaking words
+  const lines = splitSubject(reference, 80);
+  const paragraphs: Paragraph[] = [];
+
+  lines.forEach((line, index) => {
+    if (index === 0) {
+      // First line - only show "Ref:" for the very first reference (reference "a")
+      const text = isFirst ? `Ref:\t(${refLetter})\t${line}` : `\t(${refLetter})\t${line}`;
+      paragraphs.push(new Paragraph({
+        children: [
+          new TextRun({
+            text: text,
+            font: "Times New Roman",
+            size: 24
+          })
+        ],
+        tabStops: [
+          { type: TabStopType.LEFT, position: 720 },  // 0.5 inch for "Ref:"
+          { type: TabStopType.LEFT, position: 1046 }  // 0.726 inch for reference letter
+        ]
+        // Removed spacing: { after: 120 } to eliminate unwanted spacing
+      }));
+    } else {
+      // Continuation lines with proper indentation to align with reference text
+      paragraphs.push(new Paragraph({
+        children: [
+          new TextRun({
+            text: `\t\t${line}`,
+            font: "Times New Roman",
+            size: 24
+          })
+        ],
+        tabStops: [
+          { type: TabStopType.LEFT, position: 720 },  // 0.5 inch
+          { type: TabStopType.LEFT, position: 1046 }  // 0.726 inch - aligns with reference text
+        ]
+        // Removed spacing: { after: 120 } to eliminate unwanted spacing
+      }));
+    }
+  });
+
+  return paragraphs;
+};
+
 
 // ===============================
 // REFERENCE TYPE OPTIONS
@@ -108,14 +803,13 @@ const REFERENCE_TYPES = [
 
 // Common "who" examples for autocomplete/suggestions
 const COMMON_ORIGINATORS = [
-  'CO',
-  'XO', 
-  'CMC',
-  'S-1',
-  '1stSgt',
-  'CNO',
-  'SECNAV',
-  'LCpl Semper Admin'
+  'Commandant of the Marine Corps',
+  'Secretary of the Navy',
+  'Chief of Naval Operations',
+  'Commanding Officer',
+  'Commanding General',
+  'Director, Marine Corps Systems Command',
+  'Director, Plans, Policies and Operations'
 ];
 
 
@@ -716,42 +1410,117 @@ const EnclosuresSection = ({ enclosures, setEnclosures, formData, setFormData, g
 };
 
 
-export default function NavalLetterGenerator() {
+export default function MarineCorpsDirectivesFormatter() {
+  // Add this helper function near the top of your component
+  const getDistributionStatementFillInFields = (code: string): string[] => {
+    const statement = DISTRIBUTION_STATEMENTS[code as keyof typeof DISTRIBUTION_STATEMENTS];
+    return statement.requiresFillIns && 'fillInFields' in statement 
+      ? (statement as any).fillInFields || []
+      : [];
+  };
+
   const [formData, setFormData] = useState<FormData>({
-    documentType: 'basic', 
-    endorsementLevel: '', 
-    basicLetterReference: '',
+    documentType: 'mco',
+    distributionStatement: {
+      code: 'A' as const
+    },
+    ssic_code: '',
+    consecutive_point: undefined,
+    revision_suffix: undefined,
+    sponsor_code: '',
+    date_signed: '',
+    designationLine: '', // ✅ ADD: Initialize designation line
+    directiveSubType: 'policy',
+    issuingAuthority: '',
+    securityClassification: 'unclassified',
+    distributionScope: 'total-force',
+    startingReferenceLevel: 'a',
+    startingEnclosureNumber: '1',
+    line1: '',
+    line2: '',
+    line3: '',
+    ssic: '',
+    originatorCode: '',
+    date: '',
+    from: '',
+    to: 'Distribution List', // ✅ SET: Default value
+    subj: '',
+    sig: '',
+    delegationText: [''],
+    startingPageNumber: 1,
+    previousPackagePageCount: 0,
+    savedAt: '',
+    references: [],
+    enclosures: [],
+    distribution: [],
+    paragraphs: [],
+    // ✅ ADD: Missing reference properties
     referenceWho: '',
     referenceType: '',
     referenceDate: '',
-    startingReferenceLevel: 'a',
-    startingEnclosureNumber: '1',
-    line1: '', line2: '', line3: '', ssic: '', originatorCode: '', date: '', from: '', to: '', subj: '', sig: '', delegationText: '',
-    startingPageNumber: 1,
-    previousPackagePageCount: 0,
+    basicLetterReference: '',
+    // ✅ ADD: Missing endorsement property
+    endorsementLevel: '1st'
   });
 
   const [validation, setValidation] = useState<ValidationState>({
-    ssic: { isValid: false, message: '' },
     subj: { isValid: false, message: '' },
-    from: { isValid: false, message: '' },
-    to: { isValid: false, message: '' }
+    from: { isValid: false, message: '' }
+    // ✅ REMOVED: to validation
   });
 
-  const [showVia, setShowVia] = useState(false);
   const [showRef, setShowRef] = useState(false);
   const [showEncl, setShowEncl] = useState(false);
-  const [showCopy, setShowCopy] = useState(false);
   const [showDelegation, setShowDelegation] = useState(false);
   
-  const [vias, setVias] = useState<string[]>(['']);
+  const [distribution, setDistribution] = useState<DistributionEntry[]>([]);
+  const [showDistribution, setShowDistribution] = useState(false);
+  
   const [references, setReferences] = useState<string[]>(['']);
   const [enclosures, setEnclosures] = useState<string[]>(['']);
-  const [copyTos, setCopyTos] = useState<string[]>(['']);
   
-  const [paragraphs, setParagraphs] = useState<ParagraphData[]>([{ id: 1, level: 1, content: '', acronymError: '' }]);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
+  const [paragraphs, setParagraphs] = useState<ParagraphData[]>([
+  {
+    id: 1,
+    level: 1,
+    content: '',
+    isMandatory: true,
+    title: 'Situation'
+  },
+  {
+    id: 2,
+    level: 1,
+    content: '',
+    isMandatory: true,
+    title: 'Mission'
+  },
+  {
+    id: 3,
+    level: 1,
+    content: '',
+    isMandatory: true,
+    title: 'Execution'
+  },
+  {
+    id: 4,
+    level: 1,
+    content: '',
+    isMandatory: true,
+    title: 'Administration and Logistics'
+  },
+  {
+    id: 5,
+    level: 1,
+    content: '',
+    isMandatory: true,
+    title: 'Command and Signal'
+  }
+]);
+
+const [paragraphCounter, setParagraphCounter] = useState(6);
+const [isGenerating, setIsGenerating] = useState(false);
+const [structureErrors, setStructureErrors] = useState<string[]>([]);
+const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
 
   // Helper functions for references and enclosures
   const getReferenceLetter = (index: number, startingLevel: string): string => {
@@ -777,10 +1546,31 @@ export default function NavalLetterGenerator() {
     }));
   };
 
+  // Add these helper functions after existing helper functions:
+  const addDistributionEntry = () => {
+    setDistribution(prev => [...prev, { type: 'pcn', code: '', description: '', copyCount: 1 }]);
+  };
+
+  const updateDistributionEntry = (index: number, field: keyof DistributionEntry, value: string | number) => {
+    setDistribution(prev => prev.map((entry, i) => 
+      i === index ? { ...entry, [field]: value } : entry
+    ));
+  };
+
+  const removeDistributionEntry = (index: number) => {
+    setDistribution(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const getDistributionDescription = (type: 'pcn' | 'iac', code: string): string => {
+    const codes = type === 'pcn' ? COMMON_PCN_CODES : COMMON_IAC_CODES;
+    const found = codes.find(c => c.code === code);
+    return found ? found.description : '';
+  };
+
   // Load saved letters from localStorage on mount
   useEffect(() => {
     try {
-      const saved = localStorage.getItem('navalLetters');
+      const saved = localStorage.getItem('marineCorpsDirectives');
       if (saved) {
         setSavedLetters(JSON.parse(saved));
       }
@@ -800,88 +1590,80 @@ export default function NavalLetterGenerator() {
       ...formData,
       id: new Date().toISOString(), // Unique ID
       savedAt: new Date().toLocaleString(),
-      vias,
       references,
       enclosures,
-      copyTos,
+      distribution,
       paragraphs,
     };
 
     const updatedLetters = [newLetter, ...savedLetters].slice(0, 10); // Keep max 10 saves
     setSavedLetters(updatedLetters);
-    localStorage.setItem('navalLetters', JSON.stringify(updatedLetters));
+    localStorage.setItem('marineCorpsDirectives', JSON.stringify(updatedLetters));
   };
   
-  const loadLetter = (letterId: string) => {
-    const letterToLoad = savedLetters.find(l => l.id === letterId);
-    if (letterToLoad) {
-      setFormData({
-        documentType: letterToLoad.documentType || 'basic',
-        endorsementLevel: letterToLoad.endorsementLevel || '',
-        basicLetterReference: letterToLoad.basicLetterReference || '',
-        referenceWho: letterToLoad.referenceWho || '',
-        referenceType: letterToLoad.referenceType || '',
-        referenceDate: letterToLoad.referenceDate || '',
-        startingReferenceLevel: letterToLoad.startingReferenceLevel || 'a',
-        startingEnclosureNumber: letterToLoad.startingEnclosureNumber || '1',
-        line1: letterToLoad.line1,
-        line2: letterToLoad.line2,
-        line3: letterToLoad.line3,
-        ssic: letterToLoad.ssic,
-        originatorCode: letterToLoad.originatorCode,
-        date: letterToLoad.date,
-        from: letterToLoad.from,
-        to: letterToLoad.to,
-        subj: letterToLoad.subj,
-        sig: letterToLoad.sig,
-        delegationText: letterToLoad.delegationText,
-        startingPageNumber: letterToLoad.startingPageNumber || 1,
-        previousPackagePageCount: letterToLoad.previousPackagePageCount || 0,
-      });
-      setVias(letterToLoad.vias);
-      setReferences(letterToLoad.references);
-      setEnclosures(letterToLoad.enclosures);
-      setCopyTos(letterToLoad.copyTos);
-      setParagraphs(letterToLoad.paragraphs);
-      
-      // Also update the UI toggles
-      setShowVia(letterToLoad.vias.some(v => v.trim() !== ''));
-      setShowRef(letterToLoad.references.some(r => r.trim() !== ''));
-      setShowEncl(letterToLoad.enclosures.some(e => e.trim() !== ''));
-      setShowCopy(letterToLoad.copyTos.some(c => c.trim() !== ''));
-      setShowDelegation(!!letterToLoad.delegationText);
+  const loadLetter = (letterToLoad: SavedLetter) => {
+    setFormData({
+      documentType: letterToLoad.documentType as 'mco' | 'mcbul' | 'supplement',
 
-      // Re-validate fields after loading
-      validateSSIC(letterToLoad.ssic);
-      validateSubject(letterToLoad.subj);
-      validateFromTo(letterToLoad.from, 'from');
-      validateFromTo(letterToLoad.to, 'to');
-    }
+    // ✅ NEW: Essential Directive Elements
+      distributionStatement: {
+        code: (letterToLoad.distributionStatement?.code as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X') || 'A',
+        reason: letterToLoad.distributionStatement?.reason,
+        dateOfDetermination: letterToLoad.distributionStatement?.dateOfDetermination,
+        originatingCommand: letterToLoad.distributionStatement?.originatingCommand
+      },
+      // ✅ ADD: Missing properties
+      ssic_code: letterToLoad.ssic_code || '',
+      consecutive_point: letterToLoad.consecutive_point,
+      revision_suffix: letterToLoad.revision_suffix,
+      sponsor_code: letterToLoad.sponsor_code || '',
+      date_signed: letterToLoad.date_signed || '',
+      supersedes: letterToLoad.supersedes || [],
+      directiveSubType: (letterToLoad.directiveSubType as any) || 'policy',
+      policyScope: letterToLoad.policyScope as any,
+      cancellationDate: letterToLoad.cancellationDate,
+      parentDirective: letterToLoad.parentDirective,
+      affectedSections: letterToLoad.affectedSections || [],
+      issuingAuthority: letterToLoad.issuingAuthority || '',
+      securityClassification: (letterToLoad.securityClassification as any) || 'unclassified',
+      distributionScope: (letterToLoad.distributionScope as any) || 'total-force',
+      reviewCycle: letterToLoad.reviewCycle as any,
+      startingReferenceLevel: letterToLoad.startingReferenceLevel || 'a',
+      startingEnclosureNumber: letterToLoad.startingEnclosureNumber || '1',
+      line1: letterToLoad.line1 || '',
+      line2: letterToLoad.line2 || '',
+      line3: letterToLoad.line3 || '',
+      ssic: letterToLoad.ssic || '',
+      originatorCode: letterToLoad.originatorCode || '',
+      date: letterToLoad.date || '',
+      from: letterToLoad.from || '',
+      to: 'Distribution List', // ✅ ALWAYS: Set to default value
+      subj: letterToLoad.subj || '',
+      sig: letterToLoad.sig || '',
+      delegationText: letterToLoad.delegationText || [],
+      startingPageNumber: letterToLoad.startingPageNumber || 1,
+      previousPackagePageCount: letterToLoad.previousPackagePageCount || 0,
+      savedAt: letterToLoad.savedAt || '',
+      references: letterToLoad.references || [],
+      enclosures: letterToLoad.enclosures || [],
+      distribution: letterToLoad.distribution || [],
+      paragraphs: letterToLoad.paragraphs || [],
+      designationLine: letterToLoad.designationLine || '',
+      referenceWho: '',
+      referenceType: '',
+      referenceDate: '',
+      basicLetterReference: '',
+      endorsementLevel: '1st'
+    });
+    setReferences(letterToLoad.references || []);
+    setEnclosures(letterToLoad.enclosures || []);
+    setDistribution(letterToLoad.distribution || []);
+    setParagraphs(letterToLoad.paragraphs || []);
   };
 
 
   // Validation Functions
-  const validateSSIC = (value: string) => {
-    const ssicPattern = /^\d{4,5}$/;
-    if (!value) {
-      setValidation(prev => ({ ...prev, ssic: { isValid: false, message: '' } }));
-      return;
-    }
-    
-    if (ssicPattern.test(value)) {
-      setValidation(prev => ({ ...prev, ssic: { isValid: true, message: 'Valid SSIC format' } }));
-    } else {
-      let message = 'SSIC must be 4-5 digits';
-      if (value.length < 4) {
-        message = `SSIC must be 4-5 digits (currently ${value.length})`;
-      } else if (value.length > 5) {
-        message = 'SSIC too long (max 5 digits)';
-      } else {
-        message = 'SSIC must contain only numbers';
-      }
-      setValidation(prev => ({ ...prev, ssic: { isValid: false, message } }));
-    }
-  };
+
 
   const validateSubject = (value: string) => {
     if (!value) {
@@ -896,26 +1678,22 @@ export default function NavalLetterGenerator() {
     }
   };
 
-  const validateFromTo = (value: string, field: 'from' | 'to') => {
-    if (value.length <= 5) {
-      setValidation(prev => ({ ...prev, [field]: { isValid: false, message: '' } }));
-      return;
-    }
-    
-    const validPatterns = [
-      /^(Commanding Officer|Chief of|Commander|Private|Corporal|Sergeant|Lieutenant|Captain|Major|Colonel|General)/i,
-       /^(Private|Corporal|Sergeant|Lieutenant|Captain|Major|Colonel|General)\s[A-Za-z\s\.]+\s\d{10}\/\d{4}\s(USMC|USN)$/i,
-      /^(Secretary|Under Secretary|Assistant Secretary)/i
-    ];
-    
-    const isValid = validPatterns.some(pattern => pattern.test(value));
-    
-    if (isValid) {
-      setValidation(prev => ({ ...prev, [field]: { isValid: true, message: 'Valid naval format' } }));
-    } else {
-      setValidation(prev => ({ ...prev, [field]: { isValid: false, message: 'Use proper naval format: "Commanding Officer, Unit Name" or "Rank First M. Last 1234567890/MOS USMC"' } }));
-    }
-  };
+  // \u274c REMOVE: Flexible validateFromTo function
+  // const validateFromTo = (value: string, field: 'from' | 'to') => { ... }
+
+const validateDirectiveReference = (formData: FormData): string[] => {
+  const errors: string[] = [];
+  
+  if (!formData.ssic) {
+    errors.push('SSIC code is required for directives');
+  }
+  
+  if (formData.documentType !== 'basic' && !formData.originatorCode) {
+    errors.push('Originator code is required for directives');
+  }
+  
+  return errors;
+};
 
   const setTodaysDate = () => {
     const today = new Date();
@@ -977,8 +1755,8 @@ export default function NavalLetterGenerator() {
   
   const handleDocumentTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newType = e.target.value as 'basic' | 'endorsement';
-    setFormData(prev => ({ 
-      ...prev, 
+    setFormData(prev => ({
+      ...prev,
       documentType: newType,
       // Reset endorsement fields if switching back to basic
       endorsementLevel: newType === 'basic' ? '' : prev.endorsementLevel,
@@ -994,25 +1772,11 @@ export default function NavalLetterGenerator() {
   };
 
   const handleEndorsementLevelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-      const level = e.target.value as EndorsementLevel;
-      
-      const levelMap: Record<string, number> = {
-        'FIRST': 1, 'SECOND': 2, 'THIRD': 3, 'FOURTH': 4, 'FIFTH': 5, 'SIXTH': 6, 'RECEIVING': 1
-      };
-      
-      const prevPages = levelMap[level] ? levelMap[level] -1 : 0;
-      const refStart = String.fromCharCode('a'.charCodeAt(0) + (levelMap[level] || 1) -1);
-      const enclStart = (levelMap[level] || 1).toString();
-      
-      setFormData(prev => ({ 
-          ...prev, 
-          endorsementLevel: level,
-          startingReferenceLevel: refStart,
-          startingEnclosureNumber: enclStart,
-          previousPackagePageCount: prevPages,
-          startingPageNumber: (prev.previousPackagePageCount || 0) + 1
-      }));
+    const level = e.target.value;
+    setFormData(prev => ({ ...prev, endorsementLevel: level }));
   };
+
+
 
   const numbersOnly = (value: string) => {
     return value.replace(/\D/g, '');
@@ -1062,29 +1826,67 @@ export default function NavalLetterGenerator() {
     setParagraphs(newParagraphs);
   };
 
+
   const removeParagraph = (id: number) => {
-    if (paragraphs.length <= 1) {
-       if (paragraphs[0].id === id) {
-           updateParagraphContent(id, '');
-           return;
-       }
+    const paragraphToRemove = paragraphs.find(p => p.id === id);
+    
+    // Prevent deletion of mandatory paragraphs
+    if (paragraphToRemove?.isMandatory) {
+      alert('Cannot delete mandatory paragraphs. Mandatory paragraphs like "Situation", "Mission", etc. are required for the document format.');
+      return;
     }
     
-    const newParagraphs = paragraphs.filter(p => p.id !== id);
-    
-    // Validate numbering after removal
-    const numberingErrors = validateParagraphNumbering(newParagraphs);
-    if (numberingErrors.length > 0) {
-      // Show confirmation dialog for potentially problematic removals
-      const proceed = window.confirm(
-        `Removing this paragraph may create numbering issues:\n\n${numberingErrors.join('\n')}\n\nDo you want to proceed?`
-      );
-      if (!proceed) return;
+    // Prevent deletion of the first paragraph (id === 1)
+    if (id === 1) {
+      alert('Cannot delete the first paragraph.');
+      return;
     }
     
-    setParagraphs(newParagraphs);
+    setParagraphs(prev => prev.filter(p => p.id !== id));
   };
+
+
+const handleUnderlineText = (paragraphId: number, textarea: HTMLTextAreaElement) => {
+  if (!textarea) return;
   
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selectedText = textarea.value.substring(start, end);
+  
+  if (selectedText.length === 0) {
+    alert('Please select text to underline.');
+    return;
+  }
+  
+  // Check if text is already underlined
+  const isAlreadyUnderlined = selectedText.startsWith('<u>') && selectedText.endsWith('</u>');
+  
+  let newText;
+  if (isAlreadyUnderlined) {
+    // Remove underline tags
+    newText = selectedText.slice(3, -4); // Remove <u> and </u>
+  } else {
+    // Add underline tags
+    newText = `<u>${selectedText}</u>`;
+  }
+  
+  const beforeText = textarea.value.substring(0, start);
+  const afterText = textarea.value.substring(end);
+  const updatedContent = beforeText + newText + afterText;
+  
+  updateParagraphContent(paragraphId, updatedContent);
+  
+  // Restore cursor position
+  setTimeout(() => {
+    if (textarea) {
+      const newCursorPos = start + newText.length;
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+      textarea.focus();
+    }
+  }, 0);
+};
+
+
 const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
     const fullText = allParagraphs.map(p => p.content).join('\n');
     const definedAcronyms = new Set<string>();
@@ -1177,7 +1979,29 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
       case 'acting_title': delegationText = 'Acting'; break;
       case 'signing_for': delegationText = 'For'; break;
     }
-    setFormData(prev => ({ ...prev, delegationText }));
+    setFormData(prev => ({ ...prev, delegationText: [delegationText] })); // Update to array
+  };
+
+  // Add new functions for managing delegation text lines
+  const addDelegationLine = () => {
+    setFormData(prev => ({
+      ...prev,
+      delegationText: [...prev.delegationText, '']
+    }));
+  };
+
+  const removeDelegationLine = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      delegationText: prev.delegationText.filter((_, i) => i !== index)
+    }));
+  };
+
+  const updateDelegationLine = (index: number, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      delegationText: prev.delegationText.map((line, i) => i === index ? value : line)
+    }));
   };
 
   /**
@@ -1304,348 +2128,514 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
     return errors;
   }, []);
 
-    const generateBasicLetter = async () => {
-        const sealBuffer = await fetchImageAsBase64("https://www.lrsm.upenn.edu/wp-content/uploads/1960/05/dod-logo.png")
-            .catch(error => {
-                console.error("Could not fetch seal, proceeding without it.", error);
-                return null;
-            });
 
-        const content = [];
+const formatDistributionStatement = (distributionStatement: FormData['distributionStatement']): string => {
+  const statement = DISTRIBUTION_STATEMENTS[distributionStatement.code];
+  if (!statement) return '';
+  
+  let text = statement.text;
+  
+  if (statement.requiresFillIns) {
+    // Replace fill-in placeholders with actual values
+    if (distributionStatement.reason) {
+      text = text.replace('(fill in reason)', distributionStatement.reason);
+    }
+    if (distributionStatement.dateOfDetermination) {
+      text = text.replace('(date of determination)', distributionStatement.dateOfDetermination);
+    }
+    if (distributionStatement.originatingCommand) {
+      text = text.replace('(insert originating command)', distributionStatement.originatingCommand)
+                 .replace('(originating command)', distributionStatement.originatingCommand);
+    }
+  }
+  
+  return text;
+};
 
-        content.push(new Paragraph({
-            children: [new TextRun({ text: "UNITED STATES MARINE CORPS", bold: true, font: "Times New Roman", size: 20 })],
-            alignment: AlignmentType.CENTER
-        }));
-        if (formData.line1) content.push(new Paragraph({ children: [new TextRun({ text: formData.line1, font: "Times New Roman", size: 16 })], alignment: AlignmentType.CENTER }));
-        if (formData.line2) content.push(new Paragraph({ children: [new TextRun({ text: formData.line2, font: "Times New Roman", size: 16 })], alignment: AlignmentType.CENTER }));
-        if (formData.line3) content.push(new Paragraph({ children: [new TextRun({ text: formData.line3, font: "Times New Roman", size: 16 })], alignment: AlignmentType.CENTER }));
-        content.push(new Paragraph({ text: "" }));
-        content.push(new Paragraph({ children: [new TextRun({ text: formData.ssic || "", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 7920 } }));
-        content.push(new Paragraph({ children: [new TextRun({ text: formData.originatorCode || "", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 7920 } }));
-        content.push(new Paragraph({ children: [new TextRun({ text: formData.date || "", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 7920 } }));
-        content.push(new Paragraph({ text: "" }));
-        content.push(new Paragraph({ children: [new TextRun({ text: "From:\t" + formData.from, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-        content.push(new Paragraph({ children: [new TextRun({ text: "To:\t" + formData.to, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
 
-        const viasWithContent = vias.filter(via => via.trim());
-        if (viasWithContent.length > 0) {
-            viasWithContent.forEach((via, i) => {
-                const viaText = i === 0 ? `Via:\t(${i + 1})\t${via}` : `\t(${i + 1})\t${via}`;
-                content.push(new Paragraph({ children: [new TextRun({ text: viaText, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }, { type: TabStopType.LEFT, position: 1046 }] }));
-            });
-            content.push(new Paragraph({ text: "" }));
-        }
+const generateBasicLetter = async () => {
+  try {
+    // Fetch DOD seal from remote URL with error handling
+    let sealBuffer: string | null = null;
+    try {
+      sealBuffer = await fetchImageAsBase64("https://www.lrsm.upenn.edu/wp-content/uploads/1960/05/dod-logo.png");
+    } catch (error) {
+      console.warn('Failed to fetch DoD seal, proceeding without it:', error);
+    }
 
-        const formattedSubjLines = splitSubject(formData.subj.toUpperCase(), 57);
-        if (formattedSubjLines.length === 0) {
-            content.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-        } else {
-            content.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 }), new TextRun({ text: formattedSubjLines[0], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            for (let i = 1; i < formattedSubjLines.length; i++) {
-                content.push(new Paragraph({ children: [new TextRun({ text: "\t" + formattedSubjLines[i], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            }
-        }
-        content.push(new Paragraph({ text: "" }));
+    const content = [];
+    
+    // Header - CENTERED
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: "UNITED STATES MARINE CORPS",
+        bold: true,
+        font: "Times New Roman",
+        size: 20,
+      })],
+      alignment: AlignmentType.CENTER
+    }));
+    
+    // Unit lines - CENTERED
+    if (formData.line1) {
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: formData.line1,
+          font: "Times New Roman",
+          size: 16,
+        })],
+        alignment: AlignmentType.CENTER
+      }));
+    }
+    
+    if (formData.line2) {
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: formData.line2,
+          font: "Times New Roman",
+          size: 16,
+        })],
+        alignment: AlignmentType.CENTER
+      }));
+    }
+    
+    if (formData.line3) {
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: formData.line3,
+          font: "Times New Roman",
+          size: 16,
+        })],
+        alignment: AlignmentType.CENTER
+      }));
+    }
+    
+    // Single empty line after address lines, before SSIC
+    content.push(new Paragraph({ text: "" }));
 
-        const refsWithContent = references.filter(ref => ref.trim());
-        if (refsWithContent.length > 0) {
-            refsWithContent.forEach((ref, i) => {
-                const refLetter = String.fromCharCode('a'.charCodeAt(0) + i);
-                const refText = i === 0 ? "Ref:\t(" + refLetter + ")\t" + ref : "\t(" + refLetter + ")\t" + ref;
-                content.push(new Paragraph({ children: [new TextRun({ text: refText, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }, { type: TabStopType.LEFT, position: 1046 }] }));
-            });
-        }
+    // Calculate the alignment position
+    const texts = [
+      formData.ssic || "",
+      formData.originatorCode || "",
+      formData.date || ""
+    ].filter(text => text.trim());
 
-        const enclsWithContent = enclosures.filter(encl => encl.trim());
-        if (enclsWithContent.length > 0) {
-            if (refsWithContent.length > 0) content.push(new Paragraph({ text: "" }));
-            enclsWithContent.forEach((encl, i) => {
-                const enclText = i === 0 ? "Encl:\t(" + (i + 1) + ")\t" + encl : "\t(" + (i + 1) + ")\t" + encl;
-                content.push(new Paragraph({ children: [new TextRun({ text: enclText, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }, { type: TabStopType.LEFT, position: 1046 }] }));
-            });
-        }
-        if (refsWithContent.length > 0 || enclsWithContent.length > 0) content.push(new Paragraph({ text: "" }));
+    const maxCharLength = texts.length > 0 
+      ? Math.max(...texts.map(text => text.length))
+      : 0;
+
+    const alignmentPosition = getPreciseAlignmentPosition(maxCharLength);
+
+    // SSIC placement - left-aligned with calculated position
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: formData.ssic || "",
+        font: "Times New Roman",
+        size: 24 // 12pt in docx
+      })],
+      alignment: AlignmentType.LEFT,
+      indent: { left: alignmentPosition }
+    }));
+
+    // Originator Code placement - left-aligned with same position
+    const originatorText = (formData.originatorCode || "").replace(/ /g, '\u00A0');
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: originatorText,
+        font: "Times New Roman",
+        size: 24
+      })],
+      alignment: AlignmentType.LEFT,
+      indent: { left: alignmentPosition }
+    }));
+
+    // Date placement - left-aligned with same position
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: formData.date || "",
+        font: "Times New Roman",
+        size: 24
+      })],
+      alignment: AlignmentType.LEFT,
+      indent: { left: alignmentPosition }
+    }));
+
+    // Single empty line after date
+    content.push(new Paragraph({ text: "" }));
+
+    // Designation Line - Simple left alignment without keepNext/keepLines
+    const designationText = (() => {
+      const designationBase = formData.designationLine || (
+        formData.documentType === 'mco' 
+          ? 'MARINE CORPS ORDER'
+          : formData.documentType === 'mcbul'
+          ? 'MARINE CORPS BULLETIN'
+          : formData.documentType === 'supplement'
+          ? `SUPPLEMENT TO ${formData.parentDirective || 'MCO [Parent]'}`
+          : 'MARINE CORPS ORDER'
+      );
+      
+      // Remove SSIC code combination - just return the designation base
+      return designationBase;
+    })();
+
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: designationText.toUpperCase(),
+        font: "Times New Roman",
+        size: 24,
+        underline: {}
+      })],
+      alignment: AlignmentType.LEFT
+    }));
+
+    content.push(new Paragraph({ text: "" }));
+
+    // ✅ UPDATED: From/To section with proper formatting
+    // a. "From:" Line - Use the title of the principal official
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: "From:\t" + (formData.from || "Commandant of the Marine Corps"),
+        font: "Times New Roman",
+        size: 24
+      })],
+      tabStops: [{ type: TabStopType.LEFT, position: 720 }],
+    }));
+
+    // b. "To:" Line - Insert "Distribution List"
+    content.push(new Paragraph({
+      children: [new TextRun({
+        text: "To:\t" + (formData.to || "Distribution List"),
+        font: "Times New Roman",
+        size: 24
+      })],
+      tabStops: [{ type: TabStopType.LEFT, position: 720 }],
+    }));
+
+    content.push(new Paragraph({ text: "" }));
+
+    // ✅ UPDATED: Multi-line subject line with proper formatting
+    // c. "Subj:" Line - All capital letters, topical statement, acronyms spelled out
+    const subjectText = formData.subj || "MARINE CORPS DIRECTIVES MANAGEMENT PROGRAM (MCDMP)";
+    const subjectParagraphs = createFormattedSubjectLine(subjectText);
+    content.push(...subjectParagraphs);
+
+    content.push(new Paragraph({ text: "" }));
+
+    // References section with multi-line formatting
+    if (references && references.length > 0) {
+      const refsWithContent = references.filter(ref => ref.trim());
+      
+      for (let i = 0; i < refsWithContent.length; i++) {
+        const refLetter = String.fromCharCode(97 + i); // a, b, c...
+        const isFirstReference = i === 0;
         
-        paragraphs.filter(p => p.content.trim()).forEach((p, i, all) => {
-            content.push(createFormattedParagraph(p, i, all));
-            content.push(new Paragraph({ text: "" }));
-        });
-
-        if (formData.sig) {
-            content.push(new Paragraph({ text: "" }), new Paragraph({ text: "" }));
-            content.push(new Paragraph({ children: [new TextRun({ text: formData.sig.toUpperCase(), font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 4680 } }));
-            if (formData.delegationText) {
-                content.push(new Paragraph({ children: [new TextRun({ text: formData.delegationText, font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 4680 } }));
-            }
-        }
-
-        const copiesWithContent = copyTos.filter(copy => copy.trim());
-        if (copiesWithContent.length > 0) {
-            content.push(new Paragraph({ text: "" }), new Paragraph({ children: [new TextRun({ text: "Copy to:", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT }));
-            copiesWithContent.forEach(copy => content.push(new Paragraph({ children: [new TextRun({ text: copy, font: "Times New Roman", size: 24 })], indent: { left: 720 } })));
-        }
-
-        const headerParagraphs: Paragraph[] = [];
-        const headerFormattedLines = splitSubject(formData.subj.toUpperCase(), 57);
-        if (headerFormattedLines.length === 0) {
-            headerParagraphs.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-        } else {
-            headerParagraphs.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 }), new TextRun({ text: headerFormattedLines[0], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            for (let i = 1; i < headerFormattedLines.length; i++) {
-                headerParagraphs.push(new Paragraph({ children: [new TextRun({ text: "\t" + headerFormattedLines[i], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            }
-        }
-        headerParagraphs.push(new Paragraph({ text: "" }));
-
-        return new Document({
-            creator: "by Semper Admin",
-            title: formData.subj || "Naval Letter",
-            description: "Generated Naval Letter Format",
-            sections: [{
-                properties: { 
-                    page: { 
-                        margin: DOC_SETTINGS.pageMargins, 
-                        size: DOC_SETTINGS.pageSize,
-                        pageNumbers: {
-                            start: 1,
-                            formatType: "decimal" as any,
-                        },
-                    }, 
-                    titlePage: true 
-                },
-                headers: {
-                    first: new Header({ children: sealBuffer ? [new Paragraph({ children: [new ImageRun({ data: sealBuffer, transformation: { width: 96, height: 96 }, floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 457200 }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 457200 } } })] })] : [] }),
-                    default: new Header({ children: headerParagraphs })
-                },
-                footers: {
-                    first: new Footer({ children: [] }),
-                    default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 24 })] })] })
-                },
-                children: content
-            }]
-        });
-    };
-
-    const generateEndorsement = async () => {
-        if (!formData.endorsementLevel || !formData.basicLetterReference) {
-            alert("Endorsement Level and Basic Letter Reference are required for generating an endorsement.");
-            return null;
-        }
-
-        const sealBuffer = await fetchImageAsBase64("https://www.lrsm.upenn.edu/wp-content/uploads/1960/05/dod-logo.png")
-            .catch(error => {
-                console.error("Could not fetch seal, proceeding without it.", error);
-                return null;
-            });
-
-        const content = [];
-
-        // Letterhead
-        content.push(new Paragraph({
-            children: [new TextRun({ text: "UNITED STATES MARINE CORPS", bold: true, font: "Times New Roman", size: 20 })],
-            alignment: AlignmentType.CENTER,
-            spacing: { after: 0 },
-        }));
-        if (formData.line1) content.push(new Paragraph({ children: [new TextRun({ text: formData.line1, font: "Times New Roman", size: 16 })], alignment: AlignmentType.CENTER, spacing: { after: 0 } }));
-        if (formData.line2) content.push(new Paragraph({ children: [new TextRun({ text: formData.line2, font: "Times New Roman", size: 16 })], alignment: AlignmentType.CENTER, spacing: { after: 0 } }));
-        if (formData.line3) content.push(new Paragraph({ children: [new TextRun({ text: formData.line3, font: "Times New Roman", size: 16 })], alignment: AlignmentType.CENTER, spacing: { after: 0 } }));
-        content.push(new Paragraph({ text: "" }));
+        // Use the new multi-line formatting function
+        const referenceParagraphs = createFormattedReferenceLine(
+          refsWithContent[i], 
+          refLetter, 
+          isFirstReference
+        );
         
-        // SSIC, Code, Date block
-        content.push(new Paragraph({ children: [new TextRun({ text: formData.ssic || "", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 7920 } }));
-        content.push(new Paragraph({ children: [new TextRun({ text: formData.originatorCode || "", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 7920 } }));
-        content.push(new Paragraph({ children: [new TextRun({ text: formData.date || "", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 7920 } }));
-        content.push(new Paragraph({ text: "" }));
+        content.push(...referenceParagraphs);
+      }
+      
+      content.push(new Paragraph({ text: "" }));
+    }
 
-        // Endorsement Identification Line
+    // Enclosures section
+    if (enclosures && enclosures.length > 0) {
+      const enclsWithContent = enclosures.filter(encl => encl.trim());
+      for (let i = 0; i < enclsWithContent.length; i++) {
+        const enclText = i === 0 ? "Encl:\t(" + (i+1) + ")\t" + enclsWithContent[i] : "\t(" + (i+1) + ")\t" + enclsWithContent[i];
         content.push(new Paragraph({
+          children: [new TextRun({
+            text: enclText,
+            font: "Times New Roman",
+            size: 24
+          })],
+          tabStops: [
+            { type: TabStopType.LEFT, position: 720 },
+            { type: TabStopType.LEFT, position: 1046 }
+          ],
+        }));
+      }
+      content.push(new Paragraph({ text: "" }));
+    }
+
+    // Add paragraphs
+    if (paragraphs && paragraphs.length > 0) {
+      paragraphs.forEach((para, index) => {
+        // Include paragraphs that have content OR are mandatory (even if blank)
+        if (para.content.trim() || para.isMandatory) {
+          // Use the proper formatted paragraph function
+          const formattedParagraph = createFormattedParagraph(para, index, paragraphs);
+          content.push(formattedParagraph);
+          
+          // Add hard space after each paragraph (except the last one)
+          if (index < paragraphs.length - 1) {
+            content.push(new Paragraph({ text: "" }));
+          }
+        }
+      });
+    } else {
+      // Add default paragraph if none exist
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: "1.  [Document content goes here]",
+          font: "Times New Roman",
+          size: 24
+        })],
+      }));
+    }
+
+    // Signature block
+    if (formData.sig) {
+      // Three empty lines before signature
+      content.push(new Paragraph({ text: "" }));
+      content.push(new Paragraph({ text: "" }));
+      content.push(new Paragraph({ text: "" }));
+      
+      // Signature name - positioned at 3.25 inches from left
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: formData.sig,
+          font: "Times New Roman",
+          size: 24
+        })],
+        alignment: AlignmentType.LEFT,
+        indent: { left: 4680 } // 3.25 inches in twips
+      }));
+      
+      // Delegation text (if present) - same positioning
+      if (formData.delegationText && formData.delegationText.length > 0) {
+        formData.delegationText.forEach((line, index) => {
+          if (line.trim()) { // Only add non-empty lines
+            content.push(new Paragraph({
+              children: [new TextRun({
+                text: line,
+                font: "Times New Roman",
+                size: 24
+              })],
+              alignment: AlignmentType.LEFT,
+              indent: { left: 4680 }
+            }));
+          }
+        });
+      }
+    }
+
+    // Distribution section
+    if (formData.distribution && formData.distribution.length > 0) {
+      content.push(new Paragraph({ text: "" }));
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: "Distribution:",
+          font: "Times New Roman",
+          size: 24
+        })],
+      }));
+      
+      formData.distribution.forEach(dist => {
+        if (dist.code.trim()) {
+          content.push(new Paragraph({
+            children: [new TextRun({
+              text: `${dist.code} (${dist.copyCount})`,
+              font: "Times New Roman",
+              size: 24
+            })],
+            indent: { left: 720 }
+          }));
+        }
+      });
+    }
+
+    const doc = new Document({
+  creator: "Marine Corps Directives Formatter",
+  title: "Marine Corps Directive", 
+  description: "Generated Marine Corps Directive Format",
+  sections: [{
+    properties: {
+      page: {
+        margin: {
+          top: convertInchesToTwip(0.5),
+          bottom: convertInchesToTwip(1.0),
+          right: convertInchesToTwip(1.0),
+          left: convertInchesToTwip(1.0),
+        },
+        size: {
+          width: convertInchesToTwip(8.5),
+          height: convertInchesToTwip(11),
+        },
+      },
+      titlePage: true,
+      pageNumbers: {
+        start: formData.startingPageNumber,
+        formatType: NumberFormat.DECIMAL
+      }
+    },
+    headers: {
+      first: new Header({
+        children: sealBuffer ? [
+          new Paragraph({
             children: [
-                new TextRun({ text: `${formData.endorsementLevel} ENDORSEMENT on ${formData.basicLetterReference}`, font: "Times New Roman", size: 24 })
+              new ImageRun({
+                data: sealBuffer,
+                transformation: {
+                  width: 96, // 0.5 inches in TWIPs
+                  height: 96 // 0.5 inches in TWIPs
+                },
+                floating: {
+                  horizontalPosition: {
+                    relative: HorizontalPositionRelativeFrom.PAGE,
+                    offset: 457200 // ≈317 inches from left
+                  },
+                  verticalPosition: {
+                    relative: VerticalPositionRelativeFrom.PAGE,
+                    offset: 457200 // ≈317 inches from top
+                  }
+                }
+              })
+            ]
+          })
+        ] : []
+      }),
+      
+      default: new Header({
+        children: [
+          // SSIC
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.ssic,
+                font: "Times New Roman",
+                size: 24
+              })
             ],
             alignment: AlignmentType.LEFT,
-        }));
-        content.push(new Paragraph({ text: "" }));
-        
-        // From/To/Via section
-        content.push(new Paragraph({ children: [new TextRun({ text: "From:\t" + formData.from, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-        content.push(new Paragraph({ children: [new TextRun({ text: "To:\t" + formData.to, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-        const viasWithContent = vias.filter(via => via.trim());
-        if (viasWithContent.length > 0) {
-            viasWithContent.forEach((via, i) => {
-                const viaText = i === 0 ? `Via:\t(${i + 1})\t${via}` : `\t(${i + 1})\t${via}`;
-                content.push(new Paragraph({ children: [new TextRun({ text: viaText, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }, { type: TabStopType.LEFT, position: 1046 }] }));
-            });
-        }
-        content.push(new Paragraph({ text: "" }));
-
-        // Subject line
-        const formattedSubjLines = splitSubject(formData.subj.toUpperCase(), 57);
-        if (formattedSubjLines.length > 0) {
-            content.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 }), new TextRun({ text: formattedSubjLines[0], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            for (let i = 1; i < formattedSubjLines.length; i++) {
-                content.push(new Paragraph({ children: [new TextRun({ text: "\t" + formattedSubjLines[i], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
+            indent: {
+              left: getHeaderAlignmentPosition(formData.ssic, formData.date)
             }
-        }
-        content.push(new Paragraph({ text: "" }));
-
-        // CONTINUATION References
-        const refsWithContent = references.filter(ref => ref.trim());
-        if (refsWithContent.length > 0) {
-            const startCharCode = formData.startingReferenceLevel.charCodeAt(0);
-            refsWithContent.forEach((ref, i) => {
-                const refLetter = String.fromCharCode(startCharCode + i);
-                const refText = i === 0 ? "Ref:\t(" + refLetter + ")\t" + ref : "\t(" + refLetter + ")\t" + ref;
-                content.push(new Paragraph({ children: [new TextRun({ text: refText, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }, { type: TabStopType.LEFT, position: 1046 }] }));
-            });
-        }
-
-        // CONTINUATION Enclosures
-        const enclsWithContent = enclosures.filter(encl => encl.trim());
-        if (enclsWithContent.length > 0) {
-            if (refsWithContent.length > 0) content.push(new Paragraph({ text: "" }));
-            const startEnclNum = parseInt(formData.startingEnclosureNumber, 10);
-            enclsWithContent.forEach((encl, i) => {
-                const enclNum = startEnclNum + i;
-                const enclText = i === 0 ? "Encl:\t(" + enclNum + ")\t" + encl : "\t(" + enclNum + ")\t" + encl;
-                content.push(new Paragraph({ children: [new TextRun({ text: enclText, font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }, { type: TabStopType.LEFT, position: 1046 }] }));
-            });
-        }
-        if (refsWithContent.length > 0 || enclsWithContent.length > 0) content.push(new Paragraph({ text: "" }));
-
-        // Body, Signature, Copy To sections (same logic as basic letter)
-        paragraphs.filter(p => p.content.trim()).forEach((p, i, all) => {
-            content.push(createFormattedParagraph(p, i, all));
-            content.push(new Paragraph({ text: "" }));
-        });
-
-        if (formData.sig) {
-            content.push(new Paragraph({ text: "" }), new Paragraph({ text: "" }));
-            content.push(new Paragraph({ children: [new TextRun({ text: formData.sig.toUpperCase(), font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 4680 } }));
-            if (formData.delegationText) {
-                content.push(new Paragraph({ children: [new TextRun({ text: formData.delegationText, font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT, indent: { left: 4680 } }));
+          }),
+          // Date
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.date,
+                font: "Times New Roman",
+                size: 24
+              })
+            ],
+            alignment: AlignmentType.LEFT,
+            indent: {
+              left: getHeaderAlignmentPosition(formData.ssic, formData.date)
             }
-        }
-        
-        const copiesWithContent = copyTos.filter(copy => copy.trim());
-        if (copiesWithContent.length > 0) {
-            content.push(new Paragraph({ text: "" }), new Paragraph({ children: [new TextRun({ text: "Copy to:", font: "Times New Roman", size: 24 })], alignment: AlignmentType.LEFT }));
-            copiesWithContent.forEach(copy => content.push(new Paragraph({ children: [new TextRun({ text: copy, font: "Times New Roman", size: 24 })], indent: { left: 720 } })));
-        }
+          }),
+          // Empty paragraph for spacing
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: "",
+                font: "Times New Roman",
+                size: 24
+              })
+            ]
+          })
+        ]
+      })
+    },
+    footers: {
+      first: new Footer({
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formatDistributionStatement(formData.distributionStatement),
+                font: "Times New Roman",
+                size: 24
+              })
+            ],
+            alignment: AlignmentType.LEFT
+          })
+        ]
+      }),
+      default: new Footer({
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({
+                children: [PageNumber.CURRENT],
+                font: "Times New Roman",
+                size: 24
+              })
+            ],
+            alignment: AlignmentType.CENTER
+          })
+        ]
+      })
+    },
+    children: content,
+  }]
+});
 
-        const headerParagraphs: Paragraph[] = [];
-        const headerFormattedLines = splitSubject(formData.subj.toUpperCase(), 57);
-        if (headerFormattedLines.length === 0) {
-            headerParagraphs.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-        } else {
-            headerParagraphs.push(new Paragraph({ children: [new TextRun({ text: "Subj:\t", font: "Times New Roman", size: 24 }), new TextRun({ text: headerFormattedLines[0], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            for (let i = 1; i < headerFormattedLines.length; i++) {
-                headerParagraphs.push(new Paragraph({ children: [new TextRun({ text: "\t" + headerFormattedLines[i], font: "Times New Roman", size: 24 })], tabStops: [{ type: TabStopType.LEFT, position: 720 }] }));
-            }
-        }
-        headerParagraphs.push(new Paragraph({ text: "" }));
+    return doc;
+  } catch (error) {
+    console.error("Error in generateBasicLetter:", error);
+    throw error;
+  }
+};
 
-        return new Document({
-            creator: "by Semper Admin",
-            title: `${formData.endorsementLevel} ENDORSEMENT`,
-            description: "Generated Naval Endorsement Format",
-            sections: [{
-                properties: { 
-                    page: { 
-                        margin: DOC_SETTINGS.pageMargins, 
-                        size: DOC_SETTINGS.pageSize,
-                        pageNumbers: {
-                            start: formData.startingPageNumber,
-                            formatType: "decimal" as any,
-                        },
-                    }, 
-                    titlePage: true 
-                },
-                headers: {
-                    first: new Header({ children: sealBuffer ? [new Paragraph({ children: [new ImageRun({ data: sealBuffer, transformation: { width: 96, height: 96 }, floating: { horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 457200 }, verticalPosition: { relative: VerticalPositionRelativeFrom.PAGE, offset: 457200 } } })] })] : [] }),
-                    default: new Header({ children: headerParagraphs })
-                },
-                footers: {
-                    first: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 24 })] })] }),
-                    default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ children: [PageNumber.CURRENT], font: "Times New Roman", size: 24 })] })] })
-                },
-                children: content
-            }]
-        });
+const generateDocument = async () => {
+  setIsGenerating(true);
+  try {
+    saveLetter(); // Save the current state before generating
+    
+    let doc;
+    let filename;
+    
+    // Use generateBasicLetter for all document types for now
+    doc = await generateBasicLetter();
+    
+    // Create a simple filename based on subject or document type
+    const baseFilename = formData.subj || `${formData.documentType.toUpperCase()}_Document` || 'MarineCorpsDirective';
+    filename = `${baseFilename.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+    
+    if(doc) {
+      const blob = await Packer.toBlob(doc);
+      saveAs(blob, filename);
     }
 
-    const generateDocument = async () => {
-    setIsGenerating(true);
-    try {
-      saveLetter(); // Save the current state before generating
-      
-      let doc;
-      let filename;
+  } catch (error) {
+    console.error("Error generating document:", error);
+    alert("Error generating document: " + (error as Error).message);
+  } finally {
+    setIsGenerating(false);
+  }
+};
 
-      if (formData.documentType === 'endorsement') {
-          doc = await generateEndorsement();
-          filename = `${formData.endorsementLevel}_ENDORSEMENT_on_${formData.subj || 'letter'}_Page${formData.startingPageNumber}.docx`;
-      } else {
-          doc = await generateBasicLetter();
-          filename = `${formData.subj || "NavalLetter"}.docx`;
-      }
-      
-      if(doc) {
-        const blob = await Packer.toBlob(doc);
-        saveAs(blob, filename);
-      }
+const unitComboboxData = UNITS.map(unit => ({
+  value: `${unit.uic}-${unit.ruc}-${unit.mcc}`, // Create a truly unique value
+  label: `${unit.unitName} (RUC: ${unit.ruc}, MCC: ${unit.mcc})`,
+  ...unit,
+}));
 
-    } catch (error) {
-      console.error("Error generating document:", error);
-      alert("Error generating document: " + (error as Error).message);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
+const handleUnitSelect = (value: string) => {
+  const selectedUnit = unitComboboxData.find(unit => unit.value === value);
+  if (selectedUnit) {
+    setFormData(prev => ({
+      ...prev,
+      line1: selectedUnit.unitName.toUpperCase(),
+      line2: selectedUnit.streetAddress.toUpperCase(),
+      line3: `${selectedUnit.cityState} ${selectedUnit.zip}`.toUpperCase(),
+    }));
+  }
+};
 
-  const unitComboboxData = UNITS.map(unit => ({
-    value: `${unit.uic}-${unit.ruc}-${unit.mcc}`, // Create a truly unique value
-    label: `${unit.unitName} (RUC: ${unit.ruc}, MCC: ${unit.mcc})`,
-    ...unit,
-  }));
+const clearUnitInfo = () => {
+  setFormData(prev => ({ ...prev, line1: '', line2: '', line3: '' }));
+};
 
-  const handleUnitSelect = (value: string) => {
-    const selectedUnit = unitComboboxData.find(unit => unit.value === value);
-    if (selectedUnit) {
-      setFormData(prev => ({
-        ...prev,
-        line1: selectedUnit.unitName.toUpperCase(),
-        line2: selectedUnit.streetAddress.toUpperCase(),
-        line3: `${selectedUnit.cityState} ${selectedUnit.zip}`.toUpperCase(),
-      }));
-    }
-  };
 
-  const clearUnitInfo = () => {
-    setFormData(prev => ({ ...prev, line1: '', line2: '', line3: '' }));
-  };
-
-  const ssicComboboxData = SSICS.map((ssic, index) => ({
-    value: `${ssic.code}-${index}`, // Make value unique by appending index
-    label: `${ssic.code} - ${ssic.nomenclature}`,
-    originalCode: ssic.code, // Keep the original code for populating the form
-  }));
-
-  const handleSsicSelect = (value: string) => {
-    const selectedSsic = ssicComboboxData.find(ssic => ssic.value === value);
-    if (selectedSsic) {
-      setFormData(prev => ({
-        ...prev,
-        ssic: selectedSsic.originalCode,
-      }));
-      validateSSIC(selectedSsic.originalCode);
-    }
-  };
-
-  const clearSsicInfo = () => {
-    setFormData(prev => ({ ...prev, ssic: '' }));
-    validateSSIC('');
-  };
 
 
   return (
@@ -1655,8 +2645,8 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
       
       {/* Custom CSS */}
       <style jsx>{`
-        .naval-gradient-bg {
-          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        .marine-gradient-bg {
+          background: linear-gradient(135deg, #000000 0%, #1C1C1C 100%);
           min-height: 100vh;
           font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
@@ -1666,13 +2656,13 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
           backdrop-filter: blur(10px);
           border-radius: 20px;
           box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
-          margin: 20px auto;
+          margin: 0px auto;
           padding: 30px;
           max-width: 1200px;
         }
         
         .main-title {
-          background: linear-gradient(45deg, #b8860b, #ffd700);
+          background: linear-gradient(45deg, #C8102E, #FFD700);
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
@@ -1687,12 +2677,12 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
           border-radius: 15px;
           padding: 25px;
           margin-bottom: 25px;
-          border: 2px solid rgba(184, 134, 11, 0.2);
+          border: 2px solid rgba(200, 16, 46, 0.2);
           box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
         }
         
         .section-legend {
-          background: linear-gradient(45deg, #b8860b, #ffd700);
+          background: linear-gradient(45deg, #C8102E, #FFD700);
           color: white;
           padding: 8px 16px;
           border-radius: 10px;
@@ -1712,7 +2702,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
         
         .input-group-text {
-          background: linear-gradient(45deg, #b8860b, #ffd700);
+          background: linear-gradient(45deg, #C8102E, #FFD700);
           color: white;
           border: none;
           font-weight: 600;
@@ -1727,15 +2717,22 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
           flex: 1;
           border-width: 2px;
           border-style: solid;
-          border-color: #e9ecef;
+          border-color: #A9A9A9;
           border-radius: 0 8px 8px 0;
           padding: 12px;
           transition: all 0.3s ease;
         }
         
         .form-control:focus {
-          border-color: #b8860b;
-          box-shadow: 0 0 0 0.2rem rgba(184, 134, 11, 0.25);
+          border-color: #C8102E;
+          box-shadow: 0 0 0 0.2rem rgba(200, 16, 46, 0.25);
+        }
+
+        .form-control[contentEditable="true"]:empty::before {
+          content: attr(data-placeholder);
+          color: #6c757d;
+          pointer-events: none;
+          display: block;
         }
         
         .input-group .input-group-text + .form-control { 
@@ -1747,13 +2744,13 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
         
         .is-valid {
-          border-left: 4px solid #28a745 !important;
-          background-color: rgba(40, 167, 69, 0.05);
+          border-left: 4px solid #2E8B57 !important;
+          background-color: rgba(46, 139, 87, 0.05);
         }
 
         .is-invalid {
-          border-left: 4px solid #dc3545 !important;
-          background-color: rgba(220, 53, 69, 0.05);
+          border-left: 4px solid #DC143C !important;
+          background-color: rgba(220, 20, 60, 0.05);
         }
 
         .feedback-message {
@@ -1764,19 +2761,19 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
 
         .text-success {
-          color: #28a745 !important;
+          color: #2E8B57 !important;
         }
 
         .text-danger {
-          color: #dc3545 !important;
+          color: #DC143C !important;
         }
 
         .text-warning {
-          color: #ffc107 !important;
+          color: #FFD700 !important;
         }
 
         .text-info {
-          color: #17a2b8 !important;
+          color: #4682B4 !important;
         }
         
         .btn {
@@ -1788,37 +2785,37 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
         
         .btn-primary {
-          background: linear-gradient(45deg, #b8860b, #ffd700);
+          background: linear-gradient(45deg, #C8102E, #FFD700);
           color: white;
         }
         
         .btn-primary:hover {
-          background: linear-gradient(45deg, #996c09, #e6c200);
+          background: linear-gradient(45deg, #A00D26, #E6C200);
           transform: translateY(-2px);
         }
         
         .btn-success {
-          background: linear-gradient(45deg, #28a745, #20c997);
+          background: linear-gradient(45deg, #2E8B57, #20c997);
           color: white;
         }
         
         .btn-success:hover {
-          background: linear-gradient(45deg, #218838, #1da88a);
+          background: linear-gradient(45deg, #26734A, #1da88a);
           transform: translateY(-2px);
         }
         
         .btn-danger {
-          background: linear-gradient(45deg, #dc3545, #c82333);
+          background: linear-gradient(45deg, #DC143C, #c82333);
           color: white;
         }
         
         .btn-danger:hover {
-          background: linear-gradient(45deg, #c82333, #a71e2a);
+          background: linear-gradient(45deg, #B8112F, #a71e2a);
           transform: translateY(-2px);
         }
         
         .generate-btn {
-          background: linear-gradient(45deg, #28a745, #20c997);
+          background: linear-gradient(45deg, #2E8B57, #20c997);
           color: white;
           border: none;
           padding: 15px 30px;
@@ -1832,7 +2829,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
         
         .generate-btn:hover {
-          background: linear-gradient(45deg, #218838, #1da88a);
+          background: linear-gradient(45deg, #26734A, #1da88a);
           transform: translateY(-3px);
         }
         
@@ -1853,7 +2850,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
           border-radius: 10px;
           padding: 20px;
           margin-bottom: 15px;
-          border-left: 4px solid #b8860b;
+          border-left: 4px solid #C8102E;
         }
         
         .paragraph-container {
@@ -1923,7 +2920,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
         
         .paragraph-level-badge {
-          background: linear-gradient(45deg, #b8860b, #ffd700);
+          background: linear-gradient(45deg, #C8102E, #FFD700);
           color: white;
           padding: 4px 8px;
           border-radius: 12px;
@@ -2053,203 +3050,289 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
         }
       `}</style>
 
-      <div className="naval-gradient-bg">
-        <div className="main-container">
-          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <img src="https://yt3.googleusercontent.com/KxVUCCrrOygiNK4sof8n_pGMIjEu3w0M3eY7pFWPmD20xjBzHFjbXgtSBzor8UBuwg6pWsBI=s160-c-k-c0x00ffffff-no-rj" alt="Semper Admin Logo" style={{ width: '100px', height: '100px', margin: '0 auto', borderRadius: '50%' }} />
-            <h1 className="main-title" style={{ marginBottom: '0', marginTop: '10px' }}>
-              {
-                {
-                  'basic': 'Naval Letter Generator',
-                  'endorsement': 'New-Page Endorsement Generator'
-                }[formData.documentType]
-              }
-            </h1>
-            <p style={{ marginTop: '0', fontSize: '1.2rem', color: '#6c757d' }}>by Semper Admin</p>
-            <p style={{ marginTop: '10px', fontSize: '0.85rem', color: '#9ca3af', fontStyle: 'italic', opacity: '0.8' }}>Last Updated: 20250721</p>
-          </div>
+      <div className="marine-gradient-bg">
+        <div className="container mx-auto px-4 py-8">
+    {/* Header Section */}
+    <div className="form-section" style={{ textAlign: 'center', marginBottom: '30px' }}>
+      <h1 className="text-4xl font-bold text-center mb-2 text-black font-display tracking-wide">
+        {
+          {
+            'basic': 'Marine Corps Directives Formatter',
+            'endorsement': 'Marine Corps Endorsement Generator',
+            'mco': 'Marine Corps Order Formatter',
+            'mcbul': 'Marine Corps Bulletin Formatter',
+            'supplement': 'Marine Corps Supplement Formatter'
+          }[formData.documentType]
+        }
+      </h1>
+      <p className="text-center text-gray-600 text-sm mb-1">by Semper Admin</p>
+      <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20250821</p>
+    </div>
 
-          {/* Document Type Selector */}
-          <div className="form-section">
-            <div className="section-legend">
-              <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
-              Choose Document Type
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '1rem' }}>
-              {/* Basic Letter Card */}
-              <button
-                type="button"
-                className={`btn ${
-                  formData.documentType === 'basic' 
-                    ? 'btn-primary' 
-                    : 'btn-outline-secondary'
-                }`}
-                onClick={() => setFormData(prev => ({ ...prev, documentType: 'basic' }))}
-                style={{
-                  padding: '20px',
-                  height: 'auto',
-                  textAlign: 'left',
-                  border: formData.documentType === 'basic' ? '3px solid #007bff' : '2px solid #dee2e6',
-                  borderRadius: '12px',
-                  transition: 'all 0.3s ease',
-                  position: 'relative',
-                  background: formData.documentType === 'basic' 
-                    ? 'linear-gradient(135deg, #007bff 0%, #0056b3 100%)' 
-                    : 'white',
-                  color: formData.documentType === 'basic' ? 'white' : '#495057',
-                  boxShadow: formData.documentType === 'basic' 
-                    ? '0 8px 25px rgba(0, 123, 255, 0.3)' 
-                    : '0 2px 10px rgba(0, 0, 0, 0.1)'
-                }}
-                onMouseEnter={(e) => {
-                  if (formData.documentType !== 'basic') {
-                    e.currentTarget.style.borderColor = '#007bff';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(0, 123, 255, 0.2)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (formData.documentType !== 'basic') {
-                    e.currentTarget.style.borderColor = '#dee2e6';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
-                  }
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-                  <div style={{
-                    fontSize: '2.5rem',
-                    opacity: 0.9,
-                    minWidth: '60px'
-                  }}>
-                    📄
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: '1.25rem',
-                      fontWeight: 'bold',
-                      marginBottom: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px'
-                    }}>
-                      <i className="fas fa-file-text"></i>
-                      Basic Letter
-                      {formData.documentType === 'basic' && (
-                        <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-                      )}
-                    </div>
-                    <div style={{
-                      fontSize: '0.95rem',
-                      opacity: 0.9,
-                      marginBottom: '10px',
-                      lineHeight: '1.4'
-                    }}>
-                      The standard format for routine correspondence and official communications.
-                    </div>
-                    <div style={{
-                      fontSize: '0.85rem',
-                      opacity: 0.8,
-                      fontStyle: 'italic'
-                    }}>
-                      ✓ Most common format
-                    </div>
-                  </div>
-                </div>
-              </button>
-
-              {/* New-Page Endorsement Card */}
-              <button
-                type="button"
-                className={`btn ${
-                  formData.documentType === 'endorsement' 
-                    ? 'btn-success' 
-                    : 'btn-outline-secondary'
-                }`}
-                onClick={() => setFormData(prev => ({ ...prev, documentType: 'endorsement' }))}
-                style={{
-                  padding: '20px',
-                  height: 'auto',
-                  textAlign: 'left',
-                  border: formData.documentType === 'endorsement' ? '3px solid #28a745' : '2px solid #dee2e6',
-                  borderRadius: '12px',
-                  transition: 'all 0.3s ease',
-                  position: 'relative',
-                  background: formData.documentType === 'endorsement' 
-                    ? 'linear-gradient(135deg, #28a745 0%, #1e7e34 100%)' 
-                    : 'white',
-                  color: formData.documentType === 'endorsement' ? 'white' : '#495057',
-                  boxShadow: formData.documentType === 'endorsement' 
-                    ? '0 8px 25px rgba(40, 167, 69, 0.3)' 
-                    : '0 2px 10px rgba(0, 0, 0, 0.1)'
-                }}
-                onMouseEnter={(e) => {
-                  if (formData.documentType !== 'endorsement') {
-                    e.currentTarget.style.borderColor = '#28a745';
-                    e.currentTarget.style.transform = 'translateY(-2px)';
-                    e.currentTarget.style.boxShadow = '0 4px 15px rgba(40, 167, 69, 0.2)';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  if (formData.documentType !== 'endorsement') {
-                    e.currentTarget.style.borderColor = '#dee2e6';
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
-                  }
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-                  <div style={{
-                    fontSize: '2.5rem',
-                    opacity: 0.9,
-                    minWidth: '60px'
-                  }}>
-                    📝
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{
-                      fontSize: '1.25rem',
-                      fontWeight: 'bold',
-                      marginBottom: '8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '10px'
-                    }}>
-                      <i className="fas fa-file-signature"></i>
-                      New-Page Endorsement
-                      {formData.documentType === 'endorsement' && (
-                        <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-                      )}
-                    </div>
-                    <div style={{
-                      fontSize: '0.95rem',
-                      opacity: 0.9,
-                      marginBottom: '10px',
-                      lineHeight: '1.4'
-                    }}>
-                      Forwards correspondence on a new page. Use for longer comments and formal endorsements.
-                    </div>
-                    <div style={{
-                      fontSize: '0.85rem',
-                      opacity: 0.8,
-                      fontStyle: 'italic'
-                    }}>
-                      → For forwarding documents
-                    </div>
-                  </div>
-                </div>
-              </button>
-            </div>
-            
-            <div style={{ fontSize: '0.875rem', color: '#6c757d', marginTop: '-10px', marginBottom: '1rem' }}>
-              <small>
-                <i className="fas fa-info-circle" style={{ marginRight: '4px' }}></i>
-                Select the type of document you want to create. Basic letters are for routine correspondence, while endorsements forward existing documents.
-              </small>
-            </div>
+{/* Document Type Selector */}
+<div className="form-section">
+  <div className="section-legend">
+    <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
+    Choose Document Type
+  </div>
+  
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '1rem' }}>
+    {/* MCO Card */}
+    <button
+      type="button"
+      className={`btn ${
+        formData.documentType === 'mco' 
+          ? 'btn-danger' 
+          : 'btn-outline-secondary'
+      }`}
+      onClick={() => setFormData(prev => ({ ...prev, documentType: 'mco' }))}
+      style={{
+        padding: '20px',
+        height: 'auto',
+        textAlign: 'left',
+        border: formData.documentType === 'mco' ? '3px solid #dc3545' : '2px solid #dee2e6',
+        borderRadius: '12px',
+        transition: 'all 0.3s ease',
+        position: 'relative',
+        background: formData.documentType === 'mco' 
+          ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)' 
+          : 'white',
+        color: formData.documentType === 'mco' ? 'white' : '#495057',
+        boxShadow: formData.documentType === 'mco' 
+          ? '0 8px 25px rgba(220, 53, 69, 0.3)' 
+          : '0 2px 10px rgba(0, 0, 0, 0.1)'
+      }}
+      onMouseEnter={(e) => {
+        if (formData.documentType !== 'mco') {
+          e.currentTarget.style.borderColor = '#dc3545';
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = '0 4px 15px rgba(220, 53, 69, 0.2)';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (formData.documentType !== 'mco') {
+          e.currentTarget.style.borderColor = '#dee2e6';
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
+        }
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+        <div style={{
+          fontSize: '2.5rem',
+          opacity: 0.9,
+          minWidth: '60px'
+        }}>
+          ⚖️
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontSize: '1.25rem',
+            fontWeight: 'bold',
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <i className="fas fa-gavel"></i>
+            MCO
+            {formData.documentType === 'mco' && (
+              <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
+            )}
           </div>
+          <div style={{
+            fontSize: '0.95rem',
+            opacity: 0.9,
+            marginBottom: '10px',
+            lineHeight: '1.4',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            Marine Corps Order - Permanent policy directives with long-term applicability.
+          </div>
+          <div style={{
+            fontSize: '0.85rem',
+            opacity: 0.8,
+            fontStyle: 'italic'
+          }}>
+            → Permanent Policy
+          </div>
+        </div>
+      </div>
+    </button>
+
+    {/* MCBul Card */}
+    <button
+      type="button"
+      className={`btn ${
+        formData.documentType === 'mcbul' 
+          ? 'btn-warning' 
+          : 'btn-outline-secondary'
+      }`}
+      onClick={() => setFormData(prev => ({ ...prev, documentType: 'mcbul' }))}
+      style={{
+        padding: '20px',
+        height: 'auto',
+        textAlign: 'left',
+        border: formData.documentType === 'mcbul' ? '3px solid #ffc107' : '2px solid #dee2e6',
+        borderRadius: '12px',
+        transition: 'all 0.3s ease',
+        position: 'relative',
+        background: formData.documentType === 'mcbul' 
+          ? 'linear-gradient(135deg, #ffc107 0%, #e0a800 100%)' 
+          : 'white',
+        color: formData.documentType === 'mcbul' ? 'white' : '#495057',
+        boxShadow: formData.documentType === 'mcbul' 
+          ? '0 8px 25px rgba(255, 193, 7, 0.3)' 
+          : '0 2px 10px rgba(0, 0, 0, 0.1)'
+      }}
+      onMouseEnter={(e) => {
+        if (formData.documentType !== 'mcbul') {
+          e.currentTarget.style.borderColor = '#ffc107';
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = '0 4px 15px rgba(255, 193, 7, 0.2)';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (formData.documentType !== 'mcbul') {
+          e.currentTarget.style.borderColor = '#dee2e6';
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
+        }
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+        <div style={{
+          fontSize: '2.5rem',
+          opacity: 0.9,
+          minWidth: '60px'
+        }}>
+          📢
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontSize: '1.25rem',
+            fontWeight: 'bold',
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <i className="fas fa-bullhorn"></i>
+            MCBul
+            {formData.documentType === 'mcbul' && (
+              <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
+            )}
+          </div>
+          <div style={{
+            fontSize: '0.95rem',
+            opacity: 0.9,
+            marginBottom: '10px',
+            lineHeight: '1.4',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            Marine Corps Bulletin - Temporary guidance with automatic cancellation dates.
+          </div>
+          <div style={{
+            fontSize: '0.85rem',
+            opacity: 0.8,
+            fontStyle: 'italic'
+          }}>
+            → Temporary Guidance
+          </div>
+        </div>
+      </div>
+    </button>
+
+    {/* Supplement Card */}
+    <button
+      type="button"
+      className={`btn ${
+        formData.documentType === 'supplement' 
+          ? 'btn-info' 
+          : 'btn-outline-secondary'
+      }`}
+      onClick={() => setFormData(prev => ({ ...prev, documentType: 'supplement' }))}
+      style={{
+        padding: '20px',
+        height: 'auto',
+        textAlign: 'left',
+        border: formData.documentType === 'supplement' ? '3px solid #6f42c1' : '2px solid #dee2e6',
+        borderRadius: '12px',
+        transition: 'all 0.3s ease',
+        position: 'relative',
+        background: formData.documentType === 'supplement' 
+          ? 'linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%)' 
+          : 'white',
+        color: formData.documentType === 'supplement' ? 'white' : '#495057',
+        boxShadow: formData.documentType === 'supplement' 
+          ? '0 8px 25px rgba(111, 66, 193, 0.3)' 
+          : '0 2px 10px rgba(0, 0, 0, 0.1)'
+      }}
+      onMouseEnter={(e) => {
+        if (formData.documentType !== 'supplement') {
+          e.currentTarget.style.borderColor = '#6f42c1';
+          e.currentTarget.style.transform = 'translateY(-2px)';
+          e.currentTarget.style.boxShadow = '0 4px 15px rgba(111, 66, 193, 0.2)';
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (formData.documentType !== 'supplement') {
+          e.currentTarget.style.borderColor = '#dee2e6';
+          e.currentTarget.style.transform = 'translateY(0)';
+          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
+        }
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+        <div style={{
+          fontSize: '2.5rem',
+          opacity: 0.9,
+          minWidth: '60px'
+        }}>
+          📋
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{
+            fontSize: '1.25rem',
+            fontWeight: 'bold',
+            marginBottom: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px'
+          }}>
+            <i className="fas fa-plus-circle"></i>
+            Supplement
+            {formData.documentType === 'supplement' && (
+              <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
+            )}
+          </div>
+          <div style={{
+            fontSize: '0.95rem',
+            opacity: 0.9,
+            marginBottom: '10px',
+            lineHeight: '1.4',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis'
+          }}>
+            Supplement - Modifications or additions to existing directives.
+          </div>
+          <div style={{
+            fontSize: '0.85rem',
+            opacity: 0.8,
+            fontStyle: 'italic'
+          }}>
+            → Directive Amendment
+          </div>
+        </div>
+      </div>
+    </button>
+  </div>
+</div>
           
+
+
           {/* Endorsement-Specific Fields */}
           {(formData.documentType === 'endorsement') && (
              <div className="form-section">
@@ -2364,23 +3447,26 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                    borderRadius: '0 0.5rem 0.5rem 0'
                  }}>
                     <div style={{ display: 'flex' }}>
-                    <div style={{ paddingTop: '0.25rem' }}><i className="fas fa-info-circle" style={{ fontSize: '1.125rem', marginRight: '0.5rem' }}></i></div>
-                    <div>
-                        <p style={{ fontWeight: 'bold', margin: 0 }}>Endorsement Mode</p>
-                        <p style={{ fontSize: '0.875rem', margin: 0 }}>Endorsements forward the original letter. The "From" field becomes the endorsing command, and the "To" field is the next destination.</p>
-                    </div>
-                    </div>
-                </div>
-            </div>
-          )}
+                 <div style={{ paddingTop: '0.25rem' }}><i className="fas fa-info-circle" style={{ fontSize: '1.125rem', marginRight: '0.5rem' }}></i></div>
+                 <div>
+                     <p style={{ fontWeight: 'bold', margin: 0 }}>Endorsement Mode</p>
+                     <p style={{ fontSize: '0.875rem', margin: 0 }}>Endorsements forward the original letter. The "From" field becomes the endorsing command, and the "To" field is the next destination.</p>
+                 </div>
+                 </div>
+             </div>
+         </div>
+       )}
 
 
-          {/* Unit Information Section */}
-          <div className="form-section">
-            <div className="section-legend">
-              <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
-              Unit Information
-            </div>
+
+
+
+         {/* Unit Information Section */}
+         <div className="form-section">
+           <div className="section-legend">
+             <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
+             Unit Information
+           </div>
 
             <div className="input-group">
                 <span className="input-group-text" style={{ minWidth: '150px' }}>
@@ -2448,35 +3534,29 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
             </div>
           </div>
 
-          {/* Header Information */}
+          {/* Required Information */}
           <div className="form-section">
             <div className="section-legend">
-              <i className="fas fa-info-circle" style={{ marginRight: '8px' }}></i>
-              Header Information
+              <i className="fas fa-exclamation-circle" style={{ marginRight: '8px' }}></i>
+              Required Information
             </div>
 
+            {/* ✅ NEW: Designation Line Input - Added at the top */}
             <div className="input-group">
-               <span className="input-group-text" style={{ minWidth: '150px' }}>
-                  <i className="fas fa-search" style={{ marginRight: '8px' }}></i>
-                  Find SSIC:
-                </span>
-                <Combobox
-                  items={ssicComboboxData}
-                  onSelect={handleSsicSelect}
-                  placeholder="Search SSIC by subject..."
-                  searchMessage="No SSIC found."
-                  inputPlaceholder="Search nomenclatures..."
-                />
-                 <button
-                  className="btn btn-danger"
-                  type="button"
-                  onClick={clearSsicInfo}
-                  title="Clear SSIC"
-                  style={{ borderRadius: '0 8px 8px 0' }}
-                >
-                  <i className="fas fa-times"></i>
-                </button>
+              <span className="input-group-text">
+                <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
+                Designation Line:
+              </span>
+              <input 
+                className="form-control"
+                type="text" 
+                placeholder="e.g., MARINE CORPS ORDER 5215.1K"
+                value={formData.designationLine || ''}
+                onChange={(e) => setFormData(prev => ({ ...prev, designationLine: autoUppercase(e.target.value) }))}
+              />
             </div>
+
+
             
             <div className="input-group">
               <span className="input-group-text">
@@ -2484,23 +3564,16 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                 SSIC:
               </span>
               <input 
-                className={`form-control ${validation.ssic.isValid ? 'is-valid' : formData.ssic && !validation.ssic.isValid ? 'is-invalid' : ''}`}
+                className="form-control"
                 type="text" 
-                placeholder="e.g., 1650"
+                placeholder="e.g., 5215.1K, 1000.5, 5200R.15"
                 value={formData.ssic}
                 onChange={(e) => {
-                  const value = numbersOnly(e.target.value);
+                  const value = e.target.value;
                   setFormData(prev => ({ ...prev, ssic: value }));
-                  validateSSIC(value);
                 }}
               />
             </div>
-            {validation.ssic.message && (
-              <div className={`feedback-message ${validation.ssic.isValid ? 'text-success' : 'text-danger'}`}>
-                <i className={`fas ${validation.ssic.isValid ? 'fa-check' : 'fa-exclamation-triangle'}`} style={{ marginRight: '4px' }}></i>
-                {validation.ssic.message}
-              </div>
-            )}
             
             <div className="input-group">
               <span className="input-group-text">
@@ -2516,34 +3589,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
               />
             </div>
             
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-calendar-alt" style={{ marginRight: '8px' }}></i>
-                Date:
-              </span>
-              <input 
-                className="form-control" 
-                type="text" 
-                placeholder="e.g., 8 Jul 25, 2025-07-08, 07/08/2025, 20250708"
-                value={formData.date}
-                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                onBlur={(e) => handleDateChange(e.target.value)}
-              />
-              <button 
-                className="btn btn-primary" 
-                type="button" 
-                onClick={setTodaysDate}
-                title="Use Today's Date"
-              >
-                <i className="fas fa-calendar-day"></i>
-              </button>
-            </div>
-            <div style={{ fontSize: '0.875rem', color: '#6c757d', marginTop: '-10px', marginBottom: '1rem' }}>
-              <small>
-                <i className="fas fa-info-circle" style={{ marginRight: '4px' }}></i>
-                Accepts: YYYYMMDD, MM/DD/YYYY, YYYY-MM-DD, DD MMM YY, or "today". Auto-formats to Naval standard.
-              </small>
-            </div>
+
             
             <div className="input-group">
               <span className="input-group-text">
@@ -2553,10 +3599,9 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
               <input 
                 className={`form-control ${validation.from.isValid ? 'is-valid' : formData.from && !validation.from.isValid ? 'is-invalid' : ''}`}
                 type="text" 
-                placeholder="Commanding Officer, Marine Corps Base or Private Devil D. Dog 12345678790/0111 USMC"
+                placeholder="Commanding Officer, Marine Corps Base or Secretary of the Navy"
                 value={formData.from}
                 onChange={(e) => setFormData(prev => ({ ...prev, from: e.target.value }))}
-                onBlur={(e) => validateFromTo(e.target.value, 'from')}
               />
             </div>
             {validation.from.message && (
@@ -2566,26 +3611,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
               </div>
             )}
 
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-users" style={{ marginRight: '8px' }}></i>
-                To:
-              </span>
-              <input 
-                className={`form-control ${validation.to.isValid ? 'is-valid' : formData.to && !validation.to.isValid ? 'is-invalid' : ''}`}
-                type="text" 
-                placeholder="Platoon Commander, 1st Platoon or Private Devil D. Dog 12345678790/0111 USMC"
-                value={formData.to}
-                onChange={(e) => setFormData(prev => ({ ...prev, to: e.target.value }))}
-                onBlur={(e) => validateFromTo(e.target.value, 'to')}
-              />
-            </div>
-            {validation.to.message && (
-              <div className={`feedback-message ${validation.to.isValid ? 'text-success' : 'text-warning'}`}>
-                <i className={`fas ${validation.to.isValid ? 'fa-check' : 'fa-exclamation-triangle'}`} style={{ marginRight: '4px' }}></i>
-                {validation.to.message}
-              </div>
-            )}
+            {/* ✅ REMOVED: To input field and its validation */}
             
             <div className="input-group">
               <span className="input-group-text">
@@ -2610,6 +3636,157 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                 {validation.subj.message}
               </div>
             )}
+            
+            <div className="input-group">
+              <span className="input-group-text">
+                <i className="fas fa-share-alt" style={{ marginRight: '8px' }}></i>
+                Distribution Statement:
+              </span>
+              <select
+                className="form-control"
+                value={formData.distributionStatement.code}
+                onChange={(e) => setFormData(prev => ({
+                  ...prev,
+                  distributionStatement: {
+                    code: e.target.value as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X',
+                    reason: '',
+                    dateOfDetermination: '',
+                    originatingCommand: ''
+                  }
+                }))}
+              >
+                {Object.entries(DISTRIBUTION_STATEMENTS).map(([key, statement]) => (
+                  <option key={key} value={key}>
+                    Statement {key} - {statement.description}
+                  </option>
+                ))}
+              </select>
+            </div>
+            
+            <div style={{ 
+              fontSize: '0.875rem', 
+              color: '#495057', 
+              marginTop: '8px', 
+              marginBottom: '1rem',
+              padding: '12px',
+              backgroundColor: '#f8f9fa',
+              border: '1px solid #dee2e6',
+              borderRadius: '6px'
+            }}>
+              <strong>Full Statement:</strong><br/>
+              {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].text}
+            </div>
+            
+            {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && (
+              <div style={{ marginBottom: '1rem' }}>
+                <div style={{ 
+                  fontSize: '0.9rem', 
+                  fontWeight: '600', 
+                  marginBottom: '12px',
+                  color: '#dc3545'
+                }}>
+                  <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
+                  Required Fill-in Information:
+                </div>
+                
+                {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && 
+                 'fillInFields' in DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] &&
+                 (DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] as any).fillInFields?.includes('reason') && (
+                  <div className="input-group" style={{ marginBottom: '8px' }}>
+                    <span className="input-group-text">
+                      <i className="fas fa-info-circle" style={{ marginRight: '8px' }}></i>
+                      Reason for Restriction:
+                    </span>
+                    <select
+                      className="form-control"
+                      value={formData.distributionStatement.reason || ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        distributionStatement: {
+                          ...prev.distributionStatement,
+                          reason: e.target.value
+                        }
+                      }))}
+                    >
+                      <option value="">Select reason...</option>
+                      {COMMON_RESTRICTION_REASONS.map(reason => (
+                        <option key={reason} value={reason}>{reason}</option>
+                      ))}
+                      <option value="custom">Custom reason (type below)</option>
+                    </select>
+                  </div>
+                )}
+                
+                {formData.distributionStatement.reason === 'custom' && (
+                  <div className="input-group" style={{ marginBottom: '8px' }}>
+                    <span className="input-group-text">
+                      <i className="fas fa-edit" style={{ marginRight: '8px' }}></i>
+                      Custom Reason:
+                    </span>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="Enter custom reason for restriction"
+                      value={formData.distributionStatement.reason || ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        distributionStatement: {
+                          ...prev.distributionStatement,
+                          reason: e.target.value
+                        }
+                      }))}
+                    />
+                  </div>
+                )}
+                
+                {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && 
+                 'fillInFields' in DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] &&
+                 (DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] as any).fillInFields?.includes('dateOfDetermination') && (
+                  <div className="input-group" style={{ marginBottom: '8px' }}>
+                    <span className="input-group-text">
+                      <i className="fas fa-calendar" style={{ marginRight: '8px' }}></i>
+                      Date of Determination:
+                    </span>
+                    <input
+                      type="date"
+                      className="form-control"
+                      value={formData.distributionStatement.dateOfDetermination || ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        distributionStatement: {
+                          ...prev.distributionStatement,
+                          dateOfDetermination: e.target.value
+                        }
+                      }))}
+                    />
+                  </div>
+                )}
+                
+                {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && 
+                 'fillInFields' in DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] &&
+                 (DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] as any).fillInFields?.includes('originatingCommand') && (
+                  <div className="input-group" style={{ marginBottom: '8px' }}>
+                    <span className="input-group-text">
+                      <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
+                      Originating Command:
+                    </span>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g., Headquarters Marine Corps"
+                      value={formData.distributionStatement.originatingCommand || ''}
+                      onChange={(e) => setFormData(prev => ({
+                        ...prev,
+                        distributionStatement: {
+                          ...prev.distributionStatement,
+                          originatingCommand: e.target.value
+                        }
+                      }))}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Optional Items Section */}
@@ -2619,137 +3796,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
               Optional Items
             </div>
             
-            <Card style={{ marginBottom: '1.5rem' }}>
-              <CardHeader>
-                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                  <i className="fas fa-route" style={{ marginRight: '8px' }}></i>
-                  Via
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="radio-group">
-                  <label style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="radio"
-                      name="ifVia"
-                      value="yes"
-                      checked={showVia}
-                      onChange={() => setShowVia(true)}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                    />
-                    <span style={{ fontSize: '1.1rem' }}>Yes</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="radio"
-                      name="ifVia"
-                      value="no"
-                      checked={!showVia}
-                      onChange={() => setShowVia(false)}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                    />
-                    <span style={{ fontSize: '1.1rem' }}>No</span>
-                  </label>
-                </div>
 
-                {showVia && (
-                  <div className="dynamic-section">
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                      <i className="fas fa-route" style={{ marginRight: '8px' }}></i>
-                      Enter Via Addressee(s):
-                    </label>
-                    {vias.map((via, index) => (
-                      <div key={index} className="input-group" style={{ width: '100%', display: 'flex' }}>
-                        <span className="input-group-text" style={{ 
-                          minWidth: '60px', 
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          display: 'flex',
-                          background: 'linear-gradient(135deg, #b8860b, #ffd700)',
-                          color: 'white',
-                          fontWeight: '600',
-                          borderRadius: '8px 0 0 8px',
-                          border: '2px solid #b8860b',
-                          flexShrink: 0,
-                          textAlign: 'center'
-                        }}>
-                          ({index + 1})
-                        </span>
-                        <input
-                          className="form-control"
-                          type="text"
-                          placeholder="🚀 Enter via information (e.g., Commanding Officer, 1st Marine Division)"
-                          value={via}
-                          onChange={(e) => updateItem(index, e.target.value, setVias)}
-                          style={{
-                            fontSize: '1rem',
-                            padding: '12px 16px',
-                            border: '2px solid #e0e0e0',
-                            borderLeft: 'none',
-                            borderRadius: '0',
-                            transition: 'all 0.3s ease',
-                            backgroundColor: '#fafafa',
-                            flex: '1',
-                            minWidth: '0'
-                          }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = '#b8860b';
-                            e.target.style.backgroundColor = '#fff';
-                            e.target.style.boxShadow = '0 0 0 3px rgba(184, 134, 11, 0.1)';
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = '#e0e0e0';
-                            e.target.style.backgroundColor = '#fafafa';
-                            e.target.style.boxShadow = 'none';
-                          }}
-                        />
-                        {index === vias.length - 1 ? (
-                          <button
-                            className="btn btn-primary"
-                            type="button"
-                            onClick={() => addItem(setVias)}
-                            style={{
-                              borderRadius: '0 8px 8px 0',
-                              flexShrink: 0,
-                              background: 'linear-gradient(135deg, #b8860b, #ffd700)',
-                              border: '2px solid #b8860b',
-                              color: 'white',
-                              fontWeight: '600',
-                              padding: '8px 16px',
-                              transition: 'all 0.3s ease'
-                            }}
-                            onMouseEnter={(e) => {
-                              (e.target as HTMLButtonElement).style.background = 'linear-gradient(135deg, #ffd700, #b8860b)';
-                              (e.target as HTMLButtonElement).style.transform = 'translateY(-1px)';
-                            }}
-                            onMouseLeave={(e) => {
-                              (e.target as HTMLButtonElement).style.background = 'linear-gradient(135deg, #b8860b, #ffd700)';
-                              (e.target as HTMLButtonElement).style.transform = 'translateY(0)';
-                            }}
-                          >
-                            <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
-                            Add
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-danger"
-                            type="button"
-                            onClick={() => removeItem(index, setVias)}
-                            style={{
-                              borderRadius: '0 8px 8px 0',
-                              flexShrink: 0
-                            }}
-                          >
-                            <i className="fas fa-trash" style={{ marginRight: '4px' }}></i>
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
             
             <Card style={{ marginBottom: '1.5rem' }}>
               <CardHeader>
@@ -3091,6 +4138,16 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                     <div className="paragraph-header">
                       <div>
                         <span className="paragraph-level-badge">Level {paragraph.level} {citation}</span>
+                        {paragraph.isMandatory && paragraph.title && (
+                          <span className="mandatory-title" style={{ 
+                            marginLeft: '12px', 
+                            fontWeight: 'bold', 
+                            color: '#0066cc',
+                            fontSize: '0.9rem'
+                          }}>
+                            {paragraph.title}
+                          </span>
+                        )}
                       </div>
                       <div>
                         {index > 0 && (
@@ -3118,19 +4175,45 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                     <textarea 
                       className="form-control" 
                       rows={4}
-                      placeholder="Enter your paragraph content here..."
+                      placeholder={paragraph.isMandatory && paragraph.title ? 
+                        `Enter content for ${paragraph.title}...` : 
+                        "Enter your paragraph content here... Use <u>text</u> for underlined text."
+                      }
                       value={paragraph.content}
                       onChange={(e) => updateParagraphContent(paragraph.id, e.target.value)}
-                      style={{ marginBottom: '12px', flex: 1 }}
+                      style={{ marginBottom: '8px', flex: 1 }}
+                      ref={(el) => {
+                        if (el) {
+                          el.dataset.paragraphId = paragraph.id.toString();
+                        }
+                      }}
                     />
-
-                    {paragraph.acronymError && (
-                        <div className="acronym-error">
-                            <i className="fas fa-exclamation-triangle" style={{ marginRight: '4px' }}></i>
-                            <small>{paragraph.acronymError}</small>
-                        </div>
-                    )}
                     
+                    {/* Underline button */}
+                    <div style={{ marginBottom: '12px' }}>
+                      <button 
+                        className="btn btn-sm" 
+                        style={{ 
+                          background: '#fff3cd', 
+                          border: '1px solid #ffeaa7', 
+                          color: '#856404',
+                          marginRight: '8px',
+                          fontSize: '0.85rem'
+                        }}
+                        onClick={() => {
+                          const textarea = document.querySelector(`textarea[data-paragraph-id="${paragraph.id}"]`) as HTMLTextAreaElement;
+                          if (textarea) {
+                            handleUnderlineText(paragraph.id, textarea);
+                          }
+                        }}
+                        title="Underline selected text"
+                      >
+                        <u>U</u> Underline
+                      </button>
+                      <small style={{ color: '#6c757d', fontSize: '0.75rem' }}>
+                        Select text in the textarea above, then click this button to add underline formatting.
+                      </small>
+                    </div>
                     
                     <div>
                       <button 
@@ -3166,16 +4249,17 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                         </button>
                       )}
                       
-                      {paragraphs.length > 1 && (
+                      {!paragraph.isMandatory && paragraph.id !== 1 && (
                         <button 
                           className="btn btn-danger btn-sm" 
                           onClick={() => removeParagraph(paragraph.id)}
                           style={{ marginLeft: '8px' }}
+                          title="Delete paragraph"
                         >
                           Delete
                         </button>
                       )}
-                      
+
                     </div>
                   </div>
                 );
@@ -3257,18 +4341,44 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                     </select>
                   </div>
 
-                  <div className="input-group">
-                    <span className="input-group-text">
+                  <div style={{ marginBottom: '1rem' }}>
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
                       <i className="fas fa-edit" style={{ marginRight: '8px' }}></i>
-                      Delegation Text:
-                    </span>
-                    <input 
-                      className="form-control" 
-                      type="text" 
-                      placeholder="Enter delegation authority text (e.g., By direction, Acting, etc.)"
-                      value={formData.delegationText}
-                      onChange={(e) => setFormData(prev => ({ ...prev, delegationText: e.target.value }))}
-                    />
+                      Delegation Text Lines:
+                    </label>
+                    
+                    {formData.delegationText.map((line, index) => (
+                      <div key={index} style={{ display: 'flex', marginBottom: '8px', alignItems: 'center' }}>
+                        <input 
+                          className="form-control" 
+                          type="text" 
+                          placeholder={`Enter delegation text line ${index + 1} (e.g., By direction, Acting, etc.)`}
+                          value={line}
+                          onChange={(e) => updateDelegationLine(index, e.target.value)}
+                          style={{ marginRight: '8px' }}
+                        />
+                        {formData.delegationText.length > 1 && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-danger btn-sm"
+                            onClick={() => removeDelegationLine(index)}
+                            style={{ minWidth: '40px' }}
+                          >
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                    
+                    <button
+                      type="button"
+                      className="btn btn-outline-primary btn-sm"
+                      onClick={addDelegationLine}
+                      style={{ marginTop: '8px' }}
+                    >
+                      <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
+                      Add Delegation Line
+                    </button>
                   </div>
                   
                   <div style={{ 
@@ -3288,82 +4398,13 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                       • <strong>By direction:</strong> For routine correspondence when specifically authorized<br />
                       • <strong>Acting:</strong> When temporarily succeeding to command or appointed to replace an official<br />
                       • <strong>Deputy Acting:</strong> For deputy positions acting in absence<br />
-                      • <strong>For:</strong> When signing for an absent official (hand-written "for" before typed name)
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                <i className="fas fa-copy" style={{ marginRight: '8px' }}></i>
-                Copy To?
-              </label>
-              <div className="radio-group">
-                <label style={{ display: 'flex', alignItems: 'center' }}>
-                  <input 
-                    type="radio" 
-                    name="ifCopy" 
-                    value="yes" 
-                    checked={showCopy}
-                    onChange={() => setShowCopy(true)}
-                    style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                  />
-                  <span style={{ fontSize: '1.1rem' }}>Yes</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center' }}>
-                  <input 
-                    type="radio" 
-                    name="ifCopy" 
-                    value="no" 
-                    checked={!showCopy}
-                    onChange={() => setShowCopy(false)}
-                    style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                  />
-                  <span style={{ fontSize: '1.1rem' }}>No</span>
-                </label>
-              </div>
 
-              {showCopy && (
-                <div className="dynamic-section">
-                  <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                    <i className="fas fa-mail-bulk" style={{ marginRight: '8px' }}></i>
-                    Enter Addressee(s):
-                  </label>
-                  {copyTos.map((copy, index) => (
-                    <div key={index} className="input-group">
-                      <input 
-                        className="form-control" 
-                        type="text" 
-                        placeholder="Enter copy to information"
-                        value={copy}
-                        onChange={(e) => updateItem(index, e.target.value, setCopyTos)}
-                      />
-                      {index === copyTos.length - 1 ? (
-                        <button 
-                          className="btn btn-primary" 
-                          type="button" 
-                          onClick={() => addItem(setCopyTos)}
-                        >
-                          <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
-                          Add
-                        </button>
-                      ) : (
-                        <button 
-                          className="btn btn-danger" 
-                          type="button" 
-                          onClick={() => removeItem(index, setCopyTos)}
-                        >
-                          <i className="fas fa-trash" style={{ marginRight: '4px' }}></i>
-                          Remove
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
           
           {/* Saved Letters Section */}
@@ -3380,7 +4421,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
                             <small>Saved: {letter.savedAt}</small>
                         </div>
                         <div className="saved-letter-actions">
-                            <button className="btn btn-sm btn-success" onClick={() => loadLetter(letter.id)}>
+                            <button className="btn btn-sm btn-success" onClick={() => loadLetter(letter)}>
                               <i className="fas fa-upload" style={{ marginRight: '4px' }}></i>
                               Load
                             </button>

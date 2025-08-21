@@ -27,11 +27,11 @@ export function StatsDisplay({ onDocumentGenerated }: StatsDisplayProps) {
   const fetchStats = async () => {
     try {
       // Increment page view
-      const viewResponse = await fetch('https://api.countapi.xyz/hit/naval-letter-formatter/views');
+      const viewResponse = await fetch('https://api.countapi.xyz/hit/marine-corps-directives-formatter/views');
       const viewData = await viewResponse.json();
       
       // Get document generation count
-      const docResponse = await fetch('https://api.countapi.xyz/get/naval-letter-formatter/documents');
+      const docResponse = await fetch('https://api.countapi.xyz/get/marine-corps-directives-formatter/documents');
       const docData = await docResponse.json();
       
       const totalViews = viewData.value || 0;
@@ -53,7 +53,7 @@ export function StatsDisplay({ onDocumentGenerated }: StatsDisplayProps) {
 
   const incrementDocumentCount = async () => {
     try {
-      const response = await fetch('https://api.countapi.xyz/hit/naval-letter-formatter/documents');
+      const response = await fetch('https://api.countapi.xyz/hit/marine-corps-directives-formatter/documents');
       const data = await response.json();
       setStats(prev => ({
         ...prev,

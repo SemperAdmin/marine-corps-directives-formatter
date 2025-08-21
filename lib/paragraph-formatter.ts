@@ -109,7 +109,7 @@ export function createFormattedParagraph(
         citationRuns = [new TextRun({ text: citation, font: "Times New Roman", size: 24 })];
     }
     
-    // Handle Level 1 separately: no initial tab, citation starts at 0"
+    // Level 1: single tab for citation and content
     if (level === 1) {
         return new Paragraph({
             children: [
@@ -119,7 +119,7 @@ export function createFormattedParagraph(
             tabStops: [
                 { type: TabStopType.LEFT, position: spec.text },
             ],
-            alignment: AlignmentType.JUSTIFIED,
+            alignment: AlignmentType.LEFT,
         });
     }
 
@@ -134,6 +134,6 @@ export function createFormattedParagraph(
             { type: TabStopType.LEFT, position: spec.citation },
             { type: TabStopType.LEFT, position: spec.text },
         ],
-        alignment: AlignmentType.JUSTIFIED,
+        alignment: AlignmentType.LEFT,
     });
 }

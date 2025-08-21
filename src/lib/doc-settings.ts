@@ -59,8 +59,9 @@ export const createSubjectLine = (subject: string) => {
 };
 
 
-// Helper to create From/To/Via lines with correct indentation and tab stop
-export const createFromToViaLine = (label: string, value: string) => {
+// Update the comment and function name:
+// Helper to create From/To lines with correct indentation and tab stop
+export const createFromToLine = (label: string, value: string) => {
   return new Paragraph({
     children: [
       new TextRun({

@@ -107,9 +107,10 @@ export default function NavalLetterGenerator() {
     }
     
     const validPatterns = [
-      /^(Commanding Officer|Chief of|Commander|Private|Corporal|Sergeant|Lieutenant|Captain|Major|Colonel|General)/i,
-       /^[A-Za-z\s]+ [A-Za-z\s\.]+ \d{10}\/\d{4} (USMC|USN)$/i,
-      /^(Secretary|Under Secretary|Assistant Secretary)/i
+      /^(Commanding Officer|Chief of|Commander)/i,
+      /^(Secretary|Under Secretary|Assistant Secretary)/i,
+      /^(Commandant|Deputy Commandant|Assistant Commandant)/i,
+      /^(Director|Deputy Director|Assistant Director)/i
     ];
     
     const isValid = validPatterns.some(pattern => pattern.test(value));
@@ -721,9 +722,9 @@ export default function NavalLetterGenerator() {
 
       // Create document
       const doc = new Document({
-        creator: "Naval Letter Generator",
-        title: "Naval Letter",
-        description: "Generated Naval Letter Format",
+        creator: "Marine Corps Directives Formatter",
+        title: "Marine Corps Directive",
+        description: "Generated Marine Corps Directive Format",
         sections: [{
           properties: {
             page: {
@@ -1130,7 +1131,7 @@ export default function NavalLetterGenerator() {
         <div className="main-container">
           <h1 className="main-title">
             <i className="fas fa-file-alt" style={{ marginRight: '12px' }}></i>
-            Naval Letter Format Generator
+            Marine Corps Directives Formatter
           </h1>
 
           {/* Unit Information Section */}
@@ -1265,7 +1266,7 @@ export default function NavalLetterGenerator() {
               <input 
                 className={`form-control ${validation.from.isValid ? 'is-valid' : formData.from && !validation.from.isValid ? 'is-invalid' : ''}`}
                 type="text" 
-                placeholder="Commanding Officer, Marine Corps Base or Private Devil D. Dog 12345678790/0111 USMC"
+                placeholder="Enter the sender's information (e.g., Commanding Officer, Marine Corps Base or Secretary of the Navy)"
                 value={formData.from}
                 onChange={(e) => setFormData(prev => ({ ...prev, from: e.target.value }))}
                 onBlur={(e) => validateFromTo(e.target.value, 'from')}
@@ -1286,7 +1287,7 @@ export default function NavalLetterGenerator() {
               <input 
                 className={`form-control ${validation.to.isValid ? 'is-valid' : formData.to && !validation.to.isValid ? 'is-invalid' : ''}`}
                 type="text" 
-                placeholder="Platoon Commander, 1st Platoon or Private Devil D. Dog 12345678790/0111 USMC"
+                placeholder="Enter the recipient's information (e.g., Commanding Officer, 1st Marine Division or Director, Marine Corps Systems Command)"
                 value={formData.to}
                 onChange={(e) => setFormData(prev => ({ ...prev, to: e.target.value }))}
                 onBlur={(e) => validateFromTo(e.target.value, 'to')}

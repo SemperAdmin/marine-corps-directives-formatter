@@ -86,7 +86,7 @@ export function createFormattedParagraph(
     index: number,
     allParagraphs: ParagraphData[]
 ): Paragraph {
-    const { level, content } = paragraph;
+    const { level, content, isMandatory, title } = paragraph;
     const { citation } = generateCitation(paragraph, index, allParagraphs);
     
     const spec = NAVAL_TAB_STOPS[level as keyof typeof NAVAL_TAB_STOPS] || NAVAL_TAB_STOPS[1];
@@ -108,17 +108,52 @@ export function createFormattedParagraph(
         citationRuns = [new TextRun({ text: citation, font: "Times New Roman", size: 24 })];
     }
     
+    // Process content for underlined text and mandatory titles
+    let contentRuns: TextRun[] = [];
+    
+    if (isMandatory && title) {
+        // For mandatory paragraphs, underline the title
+        if (content && content.trim()) {
+            // If there's content, add period and content
+            contentRuns.push(
+                new TextRun({ text: title, font: "Times New Roman", size: 24, underline: {} }),
+                new TextRun({ text: `. ${content}`, font: "Times New Roman", size: 24 })
+            );
+        } else {
+            // If no content, just the underlined title without period
+            contentRuns.push(
+                new TextRun({ text: title, font: "Times New Roman", size: 24, underline: {} })
+            );
+        }
+    } else {
+        // Parse content for underlined text using <u></u> tags
+        const parts = content.split(/(<u>.*?<\/u>)/g);
+        
+        parts.forEach(part => {
+            if (part.startsWith('<u>') && part.endsWith('</u>')) {
+                // Extract text between <u> tags and make it underlined
+                const underlinedText = part.slice(3, -4);
+                contentRuns.push(new TextRun({ text: underlinedText, font: "Times New Roman", size: 24, underline: {} }));
+            } else if (part) {
+                // Regular text
+                contentRuns.push(new TextRun({ text: part, font: "Times New Roman", size: 24 }));
+            }
+        });
+    }
+    
     // Handle Level 1 separately: no initial tab, citation starts at 0"
+    // Level 1: single tab for citation and content
     if (level === 1) {
         return new Paragraph({
             children: [
                 ...citationRuns,
-                new TextRun({ text: `\t${content}`, font: "Times New Roman", size: 24 }),
+                new TextRun({ text: '\t', font: "Times New Roman", size: 24 }),
+                ...contentRuns
             ],
             tabStops: [
                 { type: TabStopType.LEFT, position: spec.text },
             ],
-            alignment: AlignmentType.JUSTIFIED,
+            alignment: AlignmentType.LEFT,  // Changed from JUSTIFIED to LEFT
         });
     }
 
@@ -127,12 +162,13 @@ export function createFormattedParagraph(
         children: [
             new TextRun({ text: '\t' }), // First tab
             ...citationRuns,
-            new TextRun({ text: `\t${content}`, font: "Times New Roman", size: 24 }),
+            new TextRun({ text: '\t', font: "Times New Roman", size: 24 }),
+            ...contentRuns
         ],
         tabStops: [
             { type: TabStopType.LEFT, position: spec.citation },
             { type: TabStopType.LEFT, position: spec.text },
         ],
-        alignment: AlignmentType.JUSTIFIED,
+        alignment: AlignmentType.LEFT,  // Changed from JUSTIFIED to LEFT
     });
 }

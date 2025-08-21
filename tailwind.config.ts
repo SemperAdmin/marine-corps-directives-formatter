@@ -1,7 +1,7 @@
 import type {Config} from 'tailwindcss';
 
 export default {
-  darkMode: 'class',  // Change from ['class'] to 'class'
+  darkMode: 'class',
   content: [
     './src/pages/**/*.{js,ts,jsx,tsx,mdx}',
     './src/components/**/*.{js,ts,jsx,tsx,mdx}',
@@ -22,7 +22,7 @@ export default {
         serif: ['Times New Roman', 'serif'],
       },
       colors: {
-        // Naval-themed color system
+        // Marine Corps color system
         background: 'hsl(var(--background))',
         foreground: 'hsl(var(--foreground))',
         card: {
@@ -63,36 +63,36 @@ export default {
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))',
         },
-        // Naval-specific colors
-        naval: {
-          gold: '#b8860b',
-          'gold-light': '#ffd700',
-          'gold-dark': '#996c09',
-          gray: '#495057',
-          'gray-light': '#6c757d',
-          'gray-lighter': '#e9ecef',
-          white: '#ffffff',
-          blue: '#1a1a2e',
-          'blue-dark': '#16213e',
+        // Marine Corps specific colors
+        marine: {
+          'scarlet': '#C8102E',        // Primary Red
+          'black': '#000000',          // Primary Black
+          'charcoal': '#1C1C1C',       // Off-Black
+          'gray': '#A9A9A9',           // Support Gray
+          'gold': '#FFD700',           // Accent Gold
+          'gunmetal': '#2E2E2E',       // Neutral Background
+          'green': '#2E8B57',          // Success State
+          'crimson': '#DC143C',        // Error State
+          'steel': '#4682B4',          // Info/Link Color
         },
       },
       borderRadius: {
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',
-        // Naval form radius
-        'naval': '8px',
-        'naval-left': '8px 0 0 8px',
-        'naval-right': '0 8px 8px 0',
+        // Marine Corps form radius
+        'marine': '8px',
+        'marine-left': '8px 0 0 8px',
+        'marine-right': '0 8px 8px 0',
       },
       boxShadow: {
-        'naval-focus': '0 0 0 0.2rem rgba(184, 134, 11, 0.25)',
-        'naval-hover': '0 0 0 0.2rem rgba(184, 134, 11, 0.15)',
-        'naval-elevation': '0 2px 4px rgba(0, 0, 0, 0.1)',
+        'marine-focus': '0 0 0 0.2rem rgba(200, 16, 46, 0.25)',
+        'marine-hover': '0 0 0 0.2rem rgba(200, 16, 46, 0.15)',
+        'marine-elevation': '0 2px 4px rgba(0, 0, 0, 0.1)',
       },
       spacing: {
-        'naval-input': '12px',
-        'naval-height': '48px',
+        'marine-input': '12px',
+        'marine-height': '48px',
       },
       keyframes: {
         'accordion-down': {
@@ -111,7 +111,7 @@ export default {
             height: '0',
           },
         },
-        'naval-scale': {
+        'marine-scale': {
           '0%': { transform: 'scale(1)' },
           '100%': { transform: 'scale(1.01)' },
         },
@@ -119,7 +119,7 @@ export default {
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
-        'naval-scale': 'naval-scale 0.3s ease-out',
+        'marine-scale': 'marine-scale 0.3s ease-out',
       },
     },
   },

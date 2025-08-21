@@ -24,9 +24,9 @@ export function useStats(): UseStatsReturn {
     const loadInitialStats = async () => {
       try {
         const [docResponse, saveResponse, loadResponse] = await Promise.all([
-          fetch('https://api.countapi.xyz/get/naval-letter-formatter/documents'),
-          fetch('https://api.countapi.xyz/get/naval-letter-formatter/saves'),
-          fetch('https://api.countapi.xyz/get/naval-letter-formatter/loads')
+          fetch('https://api.countapi.xyz/get/marine-corps-directives-formatter/documents'),
+          fetch('https://api.countapi.xyz/get/marine-corps-directives-formatter/saves'),
+          fetch('https://api.countapi.xyz/get/marine-corps-directives-formatter/loads')
         ]);
 
         const [docData, saveData, loadData] = await Promise.all([
@@ -50,7 +50,7 @@ export function useStats(): UseStatsReturn {
 
   const incrementDocumentCount = async () => {
     try {
-      const response = await fetch('https://api.countapi.xyz/hit/naval-letter-formatter/documents');
+      const response = await fetch('https://api.countapi.xyz/hit/marine-corps-directives-formatter/documents');
       const data = await response.json();
       
       setStats(prev => ({ 
@@ -76,7 +76,7 @@ export function useStats(): UseStatsReturn {
 
   const incrementSaveCount = async () => {
     try {
-      const response = await fetch('https://api.countapi.xyz/hit/naval-letter-formatter/saves');
+      const response = await fetch('https://api.countapi.xyz/hit/marine-corps-directives-formatter/saves');
       const data = await response.json();
       
       setStats(prev => ({ 
@@ -97,7 +97,7 @@ export function useStats(): UseStatsReturn {
 
   const incrementLoadCount = async () => {
     try {
-      const response = await fetch('https://api.countapi.xyz/hit/naval-letter-formatter/loads');
+      const response = await fetch('https://api.countapi.xyz/hit/marine-corps-directives-formatter/loads');
       const data = await response.json();
       
       setStats(prev => ({ 
