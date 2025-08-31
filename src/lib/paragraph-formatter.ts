@@ -4,6 +4,8 @@ interface ParagraphData {
     id: number;
     level: number;
     content: string;
+    isMandatory?: boolean;
+    title?: string;
 }
 
 // 1 inch = 1440 TWIPs. All values are in TWIPs.
