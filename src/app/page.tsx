@@ -3,8 +3,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, Header, Footer, ImageRun, convertInchesToTwip, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, PageNumber, NumberFormat } from 'docx';
-import { saveAs } from 'file-saver';
-import { fetchImageAsBase64 } from '@/lib/fetch-image';
+// Removed saveAs import - using manual download method for better Next.js compatibility
+// Import DoD seal functionality
+import { createDoDSeal, getDoDSealBuffer } from '@/lib/dod-seal';
 
 import { DOC_SETTINGS } from '@/lib/doc-settings';
 import { createFormattedParagraph } from '@/lib/paragraph-formatter';
@@ -12,6 +13,42 @@ import { UNITS, Unit } from '@/lib/units';
 import { SSICS } from '@/lib/ssic';
 import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+
+/** 
+ * Simple and accurate text width estimation for Times New Roman 12pt 
+ * Based on actual measurements in Word documents 
+ */ 
+// Enhanced download function for reliable file downloads
+const downloadFile = (blob: Blob, filename: string) => {
+  console.log('Downloading file:', filename, 'Size:', blob.size, 'bytes');
+  
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    a.style.position = 'absolute';
+    a.style.left = '-9999px';
+    document.body.appendChild(a);
+    a.click();
+    
+    // Clean up after delay
+    setTimeout(() => {
+      try {
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } catch (cleanupError) {
+        console.warn('Cleanup error (non-critical):', cleanupError);
+      }
+    }, 100);
+    
+    console.log('Download completed successfully');
+  } catch (error) {
+    console.error('Download failed:', error);
+    throw new Error('Unable to download file. Please check browser settings.');
+  }
+};
 
 /** 
  * Simple and accurate text width estimation for Times New Roman 12pt 
@@ -136,6 +173,186 @@ const getHeaderAlignmentPosition = (ssic: string, date: string): number => {
   return getPreciseAlignmentPosition(maxLength);
 };
 
+// Helper function to format MCBul cancellation date
+const formatCancellationDate = (date: string): string => {
+  if (!date) return '';
+  
+  try {
+    const dateObj = new Date(date);
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const month = months[dateObj.getMonth()];
+    const year = dateObj.getFullYear();
+    return `${month} ${year}`;
+  } catch {
+    return date; // Return original if parsing fails
+  }
+};
+
+// Helper function to get cancellation line position (positioned at 4.5 inches from left)
+const getCancellationLinePosition = (ssic: string, date: string): number => {
+  // Position cancellation line at exactly 4.5 inches from left margin
+  return 6480; // 4.5 inches * 1440 twips/inch = 6480 twips
+};
+
+// Helper function to get MCBul-specific paragraphs
+const getMCBulParagraphs = (): ParagraphData[] => {
+  return [
+    {
+      id: 1,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Purpose'
+    },
+    {
+      id: 2,
+      level: 1,
+      content: '',
+      isMandatory: true, // Display as mandatory but deletable
+      title: 'Cancellation'
+    },
+    {
+      id: 3,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Background'
+    },
+    {
+      id: 4,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Action'
+    },
+    {
+      id: 5,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Reserve Applicability'
+    }
+  ];
+};
+
+const getMCOParagraphs = (): ParagraphData[] => {
+  return [
+    {
+      id: 1,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Situation'
+    },
+    {
+      id: 2,
+      level: 1,
+      content: '',
+      isMandatory: true, // Display as mandatory but deletable
+      title: 'Cancellation'
+    },
+    {
+      id: 3,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Mission'
+    },
+    {
+      id: 4,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Execution'
+    },
+    {
+      id: 5,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Administration and Logistics'
+    },
+    {
+      id: 6,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Command and Signal'
+    }
+  ];
+};
+
+
+
+const getDefaultParagraphs = (): ParagraphData[] => {
+  return [
+    {
+      id: 1,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Situation'
+    },
+    {
+      id: 2,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Mission'
+    },
+    {
+      id: 3,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Execution'
+    },
+    {
+      id: 4,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Administration and Logistics'
+    },
+    {
+      id: 5,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Command and Signal'
+    }
+  ];
+};
+
+// Helper function to get specific placeholder text for paragraphs
+const getParagraphPlaceholder = (paragraph: ParagraphData, documentType: string): string => {
+  if (!paragraph.title) {
+    return "Enter your paragraph content here... Use <u>text</u> for underlined text.";
+  }
+
+  const placeholders: { [key: string]: { [title: string]: string } } = {
+    'mco': {
+      'Situation': 'Enter the purpose and background for this directive. Describe what this order addresses and why it is needed.',
+      'Cancellation': 'List directives being canceled. Show SSIC codes and include dates for bulletins. Only cancel directives you sponsor.',
+      'Mission': 'Describe the task to be accomplished with clear, concise statements. When cancellation is included, this becomes paragraph 3.',
+      'Execution': 'Provide clear statements of commander\'s intent to implement the directive. Include: (1) Commander\'s Intent and Concept of Operations, (2) Subordinate Element Missions, (3) Coordinating Instructions.',
+      'Administration and Logistics': 'Describe logistics, specific responsibilities, and support requirements.',
+      'Command and Signal': 'Include: a. Command - Applicability statement (e.g., "This Order is applicable to the Marine Corps Total Force"). b. Signal - "This Order is effective the date signed."'
+    },
+    'mcbul': {
+      'Purpose': 'Enter the reason for this bulletin. This paragraph gives the purpose and must be first.',
+      'Cancellation': 'List directives being canceled. Show SSIC codes and include dates for bulletins. Only cancel directives you sponsor.',
+      'Background': 'Provide background information when needed to explain the context or history.',
+      'Action': 'Advise organizations/commands of specific action required. Note: Actions required by bulletins are canceled when the bulletin cancels unless incorporated into another directive.',
+      'Reserve Applicability': 'Enter applicability statement, e.g., "This Directive is applicable to the Marine Corps Total Force" or "This Directive is applicable to the Marine Corps Reserve."'
+    }
+  };
+
+  const docPlaceholders = placeholders[documentType] || placeholders['mco'];
+  return docPlaceholders[paragraph.title] || `Enter content for ${paragraph.title}...`;
+};
+
 interface DocumentHeader {
   ssic_code: string;
   sponsor_code: string;
@@ -157,7 +374,7 @@ interface ParagraphData {
 
 
 interface FormData {
-  documentType: 'basic' | 'endorsement' | 'mco' | 'mcbul' | 'supplement';
+  documentType: 'basic' | 'endorsement' | 'mco' | 'mcbul';
   
   // ✅ NEW: Essential Directive Elements
   ssic_code: string; // Standard Subject Identification Code
@@ -176,8 +393,10 @@ interface FormData {
   directiveSubType: 'policy' | 'procedural' | 'administrative' | 'operational';
   policyScope?: 'marine-corps-wide' | 'hqmc-only' | 'field-commands';
   cancellationDate?: string; // MCBul only
-  parentDirective?: string; // Supplement only
-  affectedSections?: string[]; // Supplement only
+  cancellationType?: 'contingent' | 'fixed'; // MCBul: frp (contingent) or fixed date
+  cancellationContingency?: string; // MCBul: description of contingency condition
+  parentDirective?: string; // Legacy field - no longer used
+  affectedSections?: string[]; // Legacy field - no longer used
   issuingAuthority: string;
   securityClassification: 'unclassified' | 'fouo' | 'confidential' | 'secret';
   distributionScope: 'total-force' | 'active-duty' | 'reserves';
@@ -242,6 +461,8 @@ interface SavedLetter {
   directiveSubType?: string;
   policyScope?: string;
   cancellationDate?: string;
+  cancellationType?: string;
+  cancellationContingency?: string;
   parentDirective?: string;
   affectedSections?: string[];
   issuingAuthority?: string;
@@ -313,9 +534,6 @@ const DIRECTIVE_AUTHORITY_MATRIX = {
   mcbul: {
     'announcement': ['All authorized signers'],
     'notification': ['Appropriate command level']
-  },
-  supplement: {
-    'modification': ['Original issuing authority or higher']
   }
 };
 
@@ -340,6 +558,19 @@ const validateDirectiveElements = (formData: FormData): string[] => {
   // MCO-specific validation
   if (formData.documentType === 'mco' && !formData.consecutive_point) {
     errors.push('Consecutive Point number is required for MCOs');
+  }
+
+  // MCBul-specific validation
+  if (formData.documentType === 'mcbul') {
+    if (!formData.cancellationDate) {
+      errors.push('Cancellation Date is required for MCBuls');
+    }
+    if (!formData.cancellationType) {
+      errors.push('Cancellation Type (contingent or fixed) is required for MCBuls');
+    }
+    if (formData.cancellationType === 'contingent' && !formData.cancellationContingency?.trim()) {
+      errors.push('Cancellation Contingency description is required for contingent MCBuls');
+    }
   }
 
   // Revision suffix validation
@@ -384,20 +615,13 @@ const generateDirectiveNumber = (formData: FormData): string => {
         formatNavalDate(new Date());
       return `MCBul ${ssic_code} dtd ${dateStr}`;
     }
-    case 'supplement': {
-      let number = `Supplement to ${formData.parentDirective || 'MCO [Parent]'}`;
-      if (revision_suffix) {
-        number += ` ${revision_suffix}`;
-      }
-      return number;
-    }
     default:
       return '';
   }
 };
 
 // ✅ NEW: Template Generation
-const generateDirectiveTemplate = (type: 'mco' | 'mcbul' | 'supplement') => {
+const generateDirectiveTemplate = (type: 'mco' | 'mcbul') => {
   const templates = {
     mco: {
       requiredSections: ['situation', 'mission', 'execution', 'administration', 'command'],
@@ -406,10 +630,6 @@ const generateDirectiveTemplate = (type: 'mco' | 'mcbul' | 'supplement') => {
     mcbul: {
       requiredSections: ['purpose', 'background', 'action', 'cancellation'],
       formatRequirements: { cancellationDate: true }
-    },
-    supplement: {
-      requiredSections: ['purpose', 'applicability', 'changes', 'effective'],
-      formatRequirements: { parentReference: true }
     }
   };
   return templates[type];
@@ -1430,6 +1650,9 @@ export default function MarineCorpsDirectivesFormatter() {
     sponsor_code: '',
     date_signed: '',
     designationLine: '', // ✅ ADD: Initialize designation line
+    cancellationDate: '', // MCBul only
+    cancellationType: 'contingent', // Default to contingent
+    cancellationContingency: '', // MCBul contingency description
     directiveSubType: 'policy',
     issuingAuthority: '',
     securityClassification: 'unclassified',
@@ -1522,6 +1745,31 @@ const [isGenerating, setIsGenerating] = useState(false);
 const [structureErrors, setStructureErrors] = useState<string[]>([]);
 const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
 
+// Voice-to-text state
+const [isListening, setIsListening] = useState(false);
+const [currentListeningParagraph, setCurrentListeningParagraph] = useState<number | null>(null);
+const [speechRecognition, setSpeechRecognition] = useState<any>(null);
+
+// Initialize speech recognition
+const initializeSpeechRecognition = useCallback(() => {
+  if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+    const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+    const recognition = new SpeechRecognition();
+    
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = 'en-US';
+    
+    setSpeechRecognition(recognition);
+    return recognition;
+  }
+  return null;
+}, []);
+
+useEffect(() => {
+  initializeSpeechRecognition();
+}, [initializeSpeechRecognition]);
+
   // Helper functions for references and enclosures
   const getReferenceLetter = (index: number, startingLevel: string): string => {
     const startCharCode = startingLevel.charCodeAt(0);
@@ -1585,6 +1833,47 @@ const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
     setTodaysDate();
   }, []);
 
+  // Update paragraphs when document type changes
+  useEffect(() => {
+    if (formData.documentType === 'mcbul') {
+      // Only update if current paragraphs are not already MCBul paragraphs
+      const currentTitles = paragraphs.map(p => p.title).join(',');
+      const mcbulTitles = getMCBulParagraphs().map(p => p.title).join(',');
+      
+      if (currentTitles !== mcbulTitles) {
+        const mcbulParagraphs = getMCBulParagraphs();
+        setParagraphs(mcbulParagraphs);
+        setParagraphCounter(6); // Start counter after the 5 mandatory paragraphs
+        // Update form data to keep it in sync
+        setFormData(prev => ({ ...prev, paragraphs: mcbulParagraphs }));
+      }
+    } else if (formData.documentType === 'mco') {
+      // Only update if current paragraphs are not already MCO paragraphs
+      const currentTitles = paragraphs.map(p => p.title).join(',');
+      const mcoParagraphs = getMCOParagraphs();
+      const mcoTitles = mcoParagraphs.map(p => p.title).join(',');
+      
+      if (currentTitles !== mcoTitles) {
+        setParagraphs(mcoParagraphs);
+        setParagraphCounter(7); // Start counter after the 6 mandatory paragraphs
+        // Update form data to keep it in sync
+        setFormData(prev => ({ ...prev, paragraphs: mcoParagraphs }));
+      }
+    } else {
+      // Only update if current paragraphs are not already default paragraphs
+      const currentTitles = paragraphs.map(p => p.title).join(',');
+      const defaultTitles = getDefaultParagraphs().map(p => p.title).join(',');
+      
+      if (currentTitles !== defaultTitles) {
+        const defaultParagraphs = getDefaultParagraphs();
+        setParagraphs(defaultParagraphs);
+        setParagraphCounter(6); // Start counter after the 5 mandatory paragraphs
+        // Update form data to keep it in sync
+        setFormData(prev => ({ ...prev, paragraphs: defaultParagraphs }));
+      }
+    }
+  }, [formData.documentType]); // Only depend on documentType
+
   const saveLetter = () => {
     const newLetter: SavedLetter = {
       ...formData,
@@ -1603,7 +1892,7 @@ const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
   
   const loadLetter = (letterToLoad: SavedLetter) => {
     setFormData({
-      documentType: letterToLoad.documentType as 'mco' | 'mcbul' | 'supplement',
+      documentType: letterToLoad.documentType as 'mco' | 'mcbul',
 
     // ✅ NEW: Essential Directive Elements
       distributionStatement: {
@@ -1830,8 +2119,8 @@ const validateDirectiveReference = (formData: FormData): string[] => {
   const removeParagraph = (id: number) => {
     const paragraphToRemove = paragraphs.find(p => p.id === id);
     
-    // Prevent deletion of mandatory paragraphs
-    if (paragraphToRemove?.isMandatory) {
+    // Prevent deletion of mandatory paragraphs except for Cancellation
+    if (paragraphToRemove?.isMandatory && paragraphToRemove?.title !== 'Cancellation') {
       alert('Cannot delete mandatory paragraphs. Mandatory paragraphs like "Situation", "Mission", etc. are required for the document format.');
       return;
     }
@@ -2155,13 +2444,8 @@ const formatDistributionStatement = (distributionStatement: FormData['distributi
 
 const generateBasicLetter = async () => {
   try {
-    // Fetch DOD seal from remote URL with error handling
-    let sealBuffer: string | null = null;
-    try {
-      sealBuffer = await fetchImageAsBase64("https://www.lrsm.upenn.edu/wp-content/uploads/1960/05/dod-logo.png");
-    } catch (error) {
-      console.warn('Failed to fetch DoD seal, proceeding without it:', error);
-    }
+    // Use local base64 DoD seal
+    const sealBuffer = getDoDSealBuffer();
 
     const content = [];
     
@@ -2210,8 +2494,28 @@ const generateBasicLetter = async () => {
       }));
     }
     
-    // Single empty line after address lines, before SSIC
+    // Single empty line after address lines, before cancellation/SSIC
     content.push(new Paragraph({ text: "" }));
+
+    // MCBul Cancellation Date (positioned two spaces above SSIC)
+    if (formData.documentType === 'mcbul' && formData.cancellationDate && formData.cancellationType) {
+      content.push(new Paragraph({
+        children: [new TextRun({
+          text: formData.cancellationType === 'contingent' 
+            ? `Canc frp: ${formatCancellationDate(formData.cancellationDate)}`
+            : `Canc: ${formatCancellationDate(formData.cancellationDate)}`,
+          font: "Times New Roman",
+          size: 24
+        })],
+        alignment: AlignmentType.LEFT,
+        indent: {
+          left: getCancellationLinePosition(formData.ssic, formData.date)
+        }
+      }));
+      
+      // Empty paragraph for spacing between cancellation and SSIC
+      content.push(new Paragraph({ text: "" }));
+    }
 
     // Calculate the alignment position
     const texts = [
@@ -2270,8 +2574,6 @@ const generateBasicLetter = async () => {
           ? 'MARINE CORPS ORDER'
           : formData.documentType === 'mcbul'
           ? 'MARINE CORPS BULLETIN'
-          : formData.documentType === 'supplement'
-          ? `SUPPLEMENT TO ${formData.parentDirective || 'MCO [Parent]'}`
           : 'MARINE CORPS ORDER'
       );
       
@@ -2340,42 +2642,55 @@ const generateBasicLetter = async () => {
         content.push(...referenceParagraphs);
       }
       
-      content.push(new Paragraph({ text: "" }));
+      // Only add empty paragraph if enclosures exist, otherwise let enclosures handle spacing
+      const hasEnclosures = enclosures && enclosures.length > 0 && enclosures.some(encl => encl.trim());
+      if (hasEnclosures) {
+        content.push(new Paragraph({ text: "" }));
+      }
     }
 
     // Enclosures section
     if (enclosures && enclosures.length > 0) {
       const enclsWithContent = enclosures.filter(encl => encl.trim());
-      for (let i = 0; i < enclsWithContent.length; i++) {
-        const enclText = i === 0 ? "Encl:\t(" + (i+1) + ")\t" + enclsWithContent[i] : "\t(" + (i+1) + ")\t" + enclsWithContent[i];
-        content.push(new Paragraph({
-          children: [new TextRun({
-            text: enclText,
-            font: "Times New Roman",
-            size: 24
-          })],
-          tabStops: [
-            { type: TabStopType.LEFT, position: 720 },
-            { type: TabStopType.LEFT, position: 1046 }
-          ],
-        }));
+      if (enclsWithContent.length > 0) {
+        for (let i = 0; i < enclsWithContent.length; i++) {
+          const enclText = i === 0 ? "Encl:\t(" + (i+1) + ")\t" + enclsWithContent[i] : "\t(" + (i+1) + ")\t" + enclsWithContent[i];
+          content.push(new Paragraph({
+            children: [new TextRun({
+              text: enclText,
+              font: "Times New Roman",
+              size: 24
+            })],
+            tabStops: [
+              { type: TabStopType.LEFT, position: 720 },
+              { type: TabStopType.LEFT, position: 1046 }
+            ],
+          }));
+        }
+        content.push(new Paragraph({ text: "" }));
       }
+    }
+    
+    // Add spacing before paragraphs if we have references but no enclosures
+    const hasReferences = references && references.length > 0 && references.some(ref => ref.trim());
+    const hasEnclosures = enclosures && enclosures.length > 0 && enclosures.some(encl => encl.trim());
+    if (hasReferences && !hasEnclosures) {
       content.push(new Paragraph({ text: "" }));
     }
 
     // Add paragraphs
     if (paragraphs && paragraphs.length > 0) {
-      paragraphs.forEach((para, index) => {
-        // Include paragraphs that have content OR are mandatory (even if blank)
-        if (para.content.trim() || para.isMandatory) {
-          // Use the proper formatted paragraph function
-          const formattedParagraph = createFormattedParagraph(para, index, paragraphs);
-          content.push(formattedParagraph);
-          
-          // Add hard space after each paragraph (except the last one)
-          if (index < paragraphs.length - 1) {
-            content.push(new Paragraph({ text: "" }));
-          }
+      // Filter to only include paragraphs that have content OR are mandatory (but present)
+      const activeParagraphs = paragraphs.filter(para => para.content.trim() || para.isMandatory);
+      
+      activeParagraphs.forEach((para, index) => {
+        // Use the proper formatted paragraph function with the filtered array
+        const formattedParagraph = createFormattedParagraph(para, index, activeParagraphs);
+        content.push(formattedParagraph);
+        
+        // Add hard space after each paragraph (except the last one)
+        if (index < activeParagraphs.length - 1) {
+          content.push(new Paragraph({ text: "" }));
         }
       });
     } else {
@@ -2467,38 +2782,23 @@ const generateBasicLetter = async () => {
           width: convertInchesToTwip(8.5),
           height: convertInchesToTwip(11),
         },
+        pageNumbers: {
+          start: formData.startingPageNumber,
+          formatType: NumberFormat.DECIMAL
+        }
       },
       titlePage: true,
-      pageNumbers: {
-        start: formData.startingPageNumber,
-        formatType: NumberFormat.DECIMAL
-      }
     },
     headers: {
       first: new Header({
-        children: sealBuffer ? [
-          new Paragraph({
-            children: [
-              new ImageRun({
-                data: sealBuffer,
-                transformation: {
-                  width: 96, // 0.5 inches in TWIPs
-                  height: 96 // 0.5 inches in TWIPs
-                },
-                floating: {
-                  horizontalPosition: {
-                    relative: HorizontalPositionRelativeFrom.PAGE,
-                    offset: 457200 // ≈317 inches from left
-                  },
-                  verticalPosition: {
-                    relative: VerticalPositionRelativeFrom.PAGE,
-                    offset: 457200 // ≈317 inches from top
-                  }
-                }
-              })
-            ]
-          })
-        ] : []
+        children: [
+          // DOD Seal (if buffer available)
+          ...(sealBuffer ? [
+            new Paragraph({
+              children: [createDoDSeal()]
+            })
+          ] : [])
+        ]
       }),
       
       default: new Header({
@@ -2596,13 +2896,32 @@ const generateDocument = async () => {
     // Use generateBasicLetter for all document types for now
     doc = await generateBasicLetter();
     
-    // Create a simple filename based on subject or document type
-    const baseFilename = formData.subj || `${formData.documentType.toUpperCase()}_Document` || 'MarineCorpsDirective';
-    filename = `${baseFilename.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+    // Create filename using SSIC and Subject format (e.g., "1615.2 EXAMPLE SUBJECT.docx")
+    const ssic = formData.ssic || '';
+    const subject = formData.subj || 'Document';
+    
+    if (ssic && subject) {
+      // Clean the subject for filename (remove special characters but keep spaces)
+      const cleanSubject = subject
+        .replace(/[^a-zA-Z0-9\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+      filename = `${ssic} ${cleanSubject}.docx`;
+    } else {
+      // Fallback if missing SSIC or subject
+      const baseFilename = subject || formData.documentType?.toUpperCase() || 'MarineCorpsDirective';
+      filename = `${baseFilename.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+    }
     
     if(doc) {
+      console.log('Generating Word document blob...');
       const blob = await Packer.toBlob(doc);
-      saveAs(blob, filename);
+      console.log('Word document blob created, size:', blob.size, 'bytes');
+      console.log('Filename:', filename);
+      
+      // Use our reliable download function
+      downloadFile(blob, filename);
+      console.log('Word document download initiated successfully');
     }
 
   } catch (error) {
@@ -2633,6 +2952,92 @@ const handleUnitSelect = (value: string) => {
 
 const clearUnitInfo = () => {
   setFormData(prev => ({ ...prev, line1: '', line2: '', line3: '' }));
+};
+
+
+
+// Voice-to-text functions
+const startVoiceInput = (paragraphId: number) => {
+  if (!speechRecognition) {
+    alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+    return;
+  }
+
+  // Stop any existing recognition
+  if (isListening) {
+    stopVoiceInput();
+    return;
+  }
+
+  setCurrentListeningParagraph(paragraphId);
+  setIsListening(true);
+
+  let finalTranscript = '';
+  let interimTranscript = '';
+
+  speechRecognition.onresult = (event: any) => {
+    finalTranscript = '';
+    interimTranscript = '';
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+
+    // Update paragraph content with final transcript
+    if (finalTranscript) {
+      const currentParagraph = paragraphs.find(p => p.id === paragraphId);
+      if (currentParagraph) {
+        const newContent = currentParagraph.content + (currentParagraph.content ? ' ' : '') + finalTranscript;
+        updateParagraphContent(paragraphId, newContent);
+      }
+    }
+  };
+
+  speechRecognition.onerror = (event: any) => {
+    console.error('Speech recognition error:', event.error);
+    setIsListening(false);
+    setCurrentListeningParagraph(null);
+    
+    let errorMessage = 'Speech recognition error occurred.';
+    switch (event.error) {
+      case 'no-speech':
+        errorMessage = 'No speech detected. Please try again.';
+        break;
+      case 'audio-capture':
+        errorMessage = 'Microphone not available. Please check your microphone settings.';
+        break;
+      case 'not-allowed':
+        errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
+        break;
+      case 'network':
+        errorMessage = 'Network error occurred. Please check your internet connection.';
+        break;
+    }
+    alert(errorMessage);
+  };
+
+  speechRecognition.onend = () => {
+    setIsListening(false);
+    setCurrentListeningParagraph(null);
+  };
+
+  speechRecognition.start();
+};
+
+const stopVoiceInput = () => {
+  if (speechRecognition && isListening) {
+    speechRecognition.stop();
+    setIsListening(false);
+    setCurrentListeningParagraph(null);
+  }
+};
+
+const clearParagraphContent = (paragraphId: number) => {
+  updateParagraphContent(paragraphId, '');
 };
 
 
@@ -3059,9 +3464,8 @@ const clearUnitInfo = () => {
           {
             'basic': 'Marine Corps Directives Formatter',
             'endorsement': 'Marine Corps Endorsement Generator',
-            'mco': 'Marine Corps Order Formatter',
-            'mcbul': 'Marine Corps Bulletin Formatter',
-            'supplement': 'Marine Corps Supplement Formatter'
+            'mco': 'Marine Corps Orders Formatter',
+            'mcbul': 'Marine Corps Bulletins Formatter'
           }[formData.documentType]
         }
       </h1>
@@ -3076,7 +3480,7 @@ const clearUnitInfo = () => {
     Choose Document Type
   </div>
   
-  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', marginBottom: '1rem' }}>
+  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '1rem' }}>
     {/* MCO Card */}
     <button
       type="button"
@@ -3135,7 +3539,7 @@ const clearUnitInfo = () => {
             gap: '10px'
           }}>
             <i className="fas fa-gavel"></i>
-            MCO
+            Orders
             {formData.documentType === 'mco' && (
               <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
             )}
@@ -3219,7 +3623,7 @@ const clearUnitInfo = () => {
             gap: '10px'
           }}>
             <i className="fas fa-bullhorn"></i>
-            MCBul
+            Bulletins
             {formData.documentType === 'mcbul' && (
               <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
             )}
@@ -3240,90 +3644,6 @@ const clearUnitInfo = () => {
             fontStyle: 'italic'
           }}>
             → Temporary Guidance
-          </div>
-        </div>
-      </div>
-    </button>
-
-    {/* Supplement Card */}
-    <button
-      type="button"
-      className={`btn ${
-        formData.documentType === 'supplement' 
-          ? 'btn-info' 
-          : 'btn-outline-secondary'
-      }`}
-      onClick={() => setFormData(prev => ({ ...prev, documentType: 'supplement' }))}
-      style={{
-        padding: '20px',
-        height: 'auto',
-        textAlign: 'left',
-        border: formData.documentType === 'supplement' ? '3px solid #6f42c1' : '2px solid #dee2e6',
-        borderRadius: '12px',
-        transition: 'all 0.3s ease',
-        position: 'relative',
-        background: formData.documentType === 'supplement' 
-          ? 'linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%)' 
-          : 'white',
-        color: formData.documentType === 'supplement' ? 'white' : '#495057',
-        boxShadow: formData.documentType === 'supplement' 
-          ? '0 8px 25px rgba(111, 66, 193, 0.3)' 
-          : '0 2px 10px rgba(0, 0, 0, 0.1)'
-      }}
-      onMouseEnter={(e) => {
-        if (formData.documentType !== 'supplement') {
-          e.currentTarget.style.borderColor = '#6f42c1';
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = '0 4px 15px rgba(111, 66, 193, 0.2)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (formData.documentType !== 'supplement') {
-          e.currentTarget.style.borderColor = '#dee2e6';
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
-        }
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-        <div style={{
-          fontSize: '2.5rem',
-          opacity: 0.9,
-          minWidth: '60px'
-        }}>
-          📋
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{
-            fontSize: '1.25rem',
-            fontWeight: 'bold',
-            marginBottom: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-            <i className="fas fa-plus-circle"></i>
-            Supplement
-            {formData.documentType === 'supplement' && (
-              <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-            )}
-          </div>
-          <div style={{
-            fontSize: '0.95rem',
-            opacity: 0.9,
-            marginBottom: '10px',
-            lineHeight: '1.4',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            Supplement - Modifications or additions to existing directives.
-          </div>
-          <div style={{
-            fontSize: '0.85rem',
-            opacity: 0.8,
-            fontStyle: 'italic'
-          }}>
-            → Directive Amendment
           </div>
         </div>
       </div>
@@ -3457,11 +3777,102 @@ const clearUnitInfo = () => {
          </div>
        )}
 
+          {/* MCBul-Specific Fields */}
+          {(formData.documentType === 'mcbul') && (
+             <div className="form-section">
+                <div className="section-legend" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)', border: '2px solid rgba(239, 68, 68, 0.3)' }}>
+                    <i className="fas fa-calendar-times" style={{ marginRight: '8px' }}></i>
+                    Bulletin Cancellation Details
+                </div>
+
+                {/* Cancellation Type Selector */}
+                <div className="input-group">
+                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
+                        <i className="fas fa-list-ul" style={{ marginRight: '8px' }}></i>
+                        Cancellation Type:
+                    </span>
+                    <select
+                        className="form-control"
+                        value={formData.cancellationType || 'contingent'}
+                        onChange={(e) => setFormData(prev => ({ 
+                            ...prev, 
+                            cancellationType: e.target.value as 'contingent' | 'fixed',
+                            // Clear contingency description if switching to fixed
+                            cancellationContingency: e.target.value === 'fixed' ? '' : prev.cancellationContingency
+                        }))}
+                        required
+                    >
+                        <option value="contingent">Contingent (FRP - For Ready Personnel)</option>
+                        <option value="fixed">Fixed Date</option>
+                    </select>
+                </div>
+
+                {/* Cancellation Date Input */}
+                <div className="input-group">
+                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
+                        <i className="fas fa-clock" style={{ marginRight: '8px' }}></i>
+                        Cancellation Date:
+                    </span>
+                    <input 
+                        className="form-control"
+                        type="text" 
+                        placeholder={formData.cancellationType === 'contingent' ? "e.g., 8 Jul 26 (or FRP)" : "e.g., 8 Jul 26"}
+                        value={formData.cancellationDate || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, cancellationDate: parseAndFormatDate(e.target.value) }))}
+                        required
+                    />
+                </div>
+
+                {/* Conditional Contingency Description - Only show for contingent type */}
+                {formData.cancellationType === 'contingent' && (
+                    <div className="input-group">
+                        <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
+                            <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
+                            Contingency Condition:
+                        </span>
+                        <textarea 
+                            className="form-control"
+                            rows={3}
+                            placeholder="Describe the contingency condition (e.g., upon completion of training, upon receipt of new equipment, etc.)"
+                            value={formData.cancellationContingency || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, cancellationContingency: e.target.value }))}
+                            style={{ minHeight: '80px' }}
+                        />
+                    </div>
+                )}
+
+                {/* Information Box for MCBul Cancellation */}
+                <div style={{
+                   marginTop: '1rem',
+                   padding: '0.75rem',
+                   backgroundColor: '#fef2f2',
+                   borderLeft: '4px solid #dc2626',
+                   color: '#dc2626',
+                   borderRadius: '0 0.5rem 0.5rem 0'
+                 }}>
+                    <div style={{ display: 'flex' }}>
+                        <div style={{ paddingTop: '0.25rem' }}>
+                            <i className="fas fa-info-circle" style={{ fontSize: '1.125rem', marginRight: '0.5rem' }}></i>
+                        </div>
+                        <div>
+                            <p style={{ fontWeight: 'bold', margin: 0 }}>Bulletin Cancellation Requirements</p>
+                            <p style={{ fontSize: '0.875rem', margin: '0.25rem 0 0 0' }}>
+                                {formData.cancellationType === 'contingent' 
+                                    ? "Contingent cancellations use 'FRP' (For Ready Personnel) and require a detailed description of the contingency condition."
+                                    : "Fixed date cancellations specify an exact date when the bulletin will be cancelled."
+                                }
+                            </p>
+                            <p style={{ fontSize: '0.75rem', margin: '0.5rem 0 0 0', fontStyle: 'italic' }}>
+                                The cancellation date will appear in the upper right margin of the generated document.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+             </div>
+          )}
 
 
-
-
-         {/* Unit Information Section */}
+         {/* Unit Information Section */
          <div className="form-section">
            <div className="section-legend">
              <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
@@ -3532,7 +3943,7 @@ const clearUnitInfo = () => {
                 onChange={(e) => setFormData(prev => ({ ...prev, line3: autoUppercase(e.target.value) }))}
               />
             </div>
-          </div>
+          </div>}
 
           {/* Required Information */}
           <div className="form-section">
@@ -4098,6 +4509,27 @@ const clearUnitInfo = () => {
               Body Paragraphs
             </div>
             
+            {/* Voice Input Information */}
+            <div style={{
+              backgroundColor: '#e3f2fd',
+              border: '1px solid #2196f3',
+              borderRadius: '8px',
+              padding: '12px',
+              marginBottom: '16px'
+            }}>
+              <div style={{ fontWeight: 'bold', color: '#1565c0', marginBottom: '8px' }}>
+                <i className="fas fa-microphone" style={{ marginRight: '8px' }}></i>
+                Voice Input Available
+              </div>
+              <div style={{ color: '#1565c0', fontSize: '0.9rem', lineHeight: '1.4' }}>
+                • Click <strong>Voice Input</strong> on any paragraph to start dictating<br/>
+                • Speak clearly and pause between sentences for best results<br/>
+                • Click <strong>Stop Recording</strong> or the button again to finish<br/>
+                • Works best in Chrome, Edge, and Safari browsers<br/>
+                • Requires microphone permission - allow when prompted
+              </div>
+            </div>
+            
             <div>
               {(() => {
                 const numberingErrors = validateParagraphNumbering(paragraphs);
@@ -4138,11 +4570,11 @@ const clearUnitInfo = () => {
                     <div className="paragraph-header">
                       <div>
                         <span className="paragraph-level-badge">Level {paragraph.level} {citation}</span>
-                        {paragraph.isMandatory && paragraph.title && (
+                        {paragraph.title && (
                           <span className="mandatory-title" style={{ 
                             marginLeft: '12px', 
                             fontWeight: 'bold', 
-                            color: '#0066cc',
+                            color: paragraph.isMandatory ? '#0066cc' : '#28a745',
                             fontSize: '0.9rem'
                           }}>
                             {paragraph.title}
@@ -4175,10 +4607,7 @@ const clearUnitInfo = () => {
                     <textarea 
                       className="form-control" 
                       rows={4}
-                      placeholder={paragraph.isMandatory && paragraph.title ? 
-                        `Enter content for ${paragraph.title}...` : 
-                        "Enter your paragraph content here... Use <u>text</u> for underlined text."
-                      }
+                      placeholder={getParagraphPlaceholder(paragraph, formData.documentType)}
                       value={paragraph.content}
                       onChange={(e) => updateParagraphContent(paragraph.id, e.target.value)}
                       style={{ marginBottom: '8px', flex: 1 }}
@@ -4189,15 +4618,50 @@ const clearUnitInfo = () => {
                       }}
                     />
                     
-                    {/* Underline button */}
-                    <div style={{ marginBottom: '12px' }}>
+                    {/* Voice Input and Underline buttons */}
+                    <div style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                      {/* Voice Input Button */}
+                      <button 
+                        className="btn btn-sm" 
+                        style={{ 
+                          background: isListening && currentListeningParagraph === paragraph.id ? '#dc3545' : '#28a745', 
+                          border: `1px solid ${isListening && currentListeningParagraph === paragraph.id ? '#dc3545' : '#28a745'}`, 
+                          color: 'white',
+                          fontSize: '0.85rem',
+                          minWidth: '120px',
+                          animation: isListening && currentListeningParagraph === paragraph.id ? 'pulse 1.5s infinite' : 'none'
+                        }}
+                        onClick={() => startVoiceInput(paragraph.id)}
+                        title={isListening && currentListeningParagraph === paragraph.id ? 'Click to stop recording' : 'Click to start voice input'}
+                      >
+                        <i className={`fas ${isListening && currentListeningParagraph === paragraph.id ? 'fa-stop' : 'fa-microphone'}`} style={{ marginRight: '6px' }}></i>
+                        {isListening && currentListeningParagraph === paragraph.id ? 'Stop Recording' : 'Voice Input'}
+                      </button>
+                      
+                      {/* Clear Content Button */}
+                      <button 
+                        className="btn btn-sm" 
+                        style={{ 
+                          background: '#ffc107', 
+                          border: '1px solid #ffc107', 
+                          color: '#000',
+                          fontSize: '0.85rem'
+                        }}
+                        onClick={() => clearParagraphContent(paragraph.id)}
+                        title="Clear paragraph content"
+                        disabled={!paragraph.content.trim()}
+                      >
+                        <i className="fas fa-eraser" style={{ marginRight: '6px' }}></i>
+                        Clear
+                      </button>
+                      
+                      {/* Underline Button */}
                       <button 
                         className="btn btn-sm" 
                         style={{ 
                           background: '#fff3cd', 
                           border: '1px solid #ffeaa7', 
                           color: '#856404',
-                          marginRight: '8px',
                           fontSize: '0.85rem'
                         }}
                         onClick={() => {
@@ -4210,9 +4674,17 @@ const clearUnitInfo = () => {
                       >
                         <u>U</u> Underline
                       </button>
-                      <small style={{ color: '#6c757d', fontSize: '0.75rem' }}>
-                        Select text in the textarea above, then click this button to add underline formatting.
-                      </small>
+                      
+                      <div style={{ fontSize: '0.75rem', color: '#6c757d', flex: '1', minWidth: '200px' }}>
+                        {isListening && currentListeningParagraph === paragraph.id ? (
+                          <span style={{ color: '#dc3545', fontWeight: 'bold' }}>
+                            <i className="fas fa-circle" style={{ marginRight: '4px', fontSize: '0.6rem' }}></i>
+                            Listening... Speak now
+                          </span>
+                        ) : (
+                          'Click Voice Input to dictate, select text and click Underline for formatting'
+                        )}
+                      </div>
                     </div>
                     
                     <div>
@@ -4249,7 +4721,7 @@ const clearUnitInfo = () => {
                         </button>
                       )}
                       
-                      {!paragraph.isMandatory && paragraph.id !== 1 && (
+                      {(!paragraph.isMandatory || paragraph.title === 'Cancellation') && paragraph.id !== 1 && (
                         <button 
                           className="btn btn-danger btn-sm" 
                           onClick={() => removeParagraph(paragraph.id)}
@@ -4431,6 +4903,8 @@ const clearUnitInfo = () => {
             </div>
           )}
 
+
+
           {/* Generate Button */}
           <div style={{ textAlign: 'center' }}>
             <button 
@@ -4486,6 +4960,12 @@ const clearUnitInfo = () => {
         @keyframes spin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
+        }
+        
+        @keyframes pulse {
+          0% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.8; }
+          100% { transform: scale(1); opacity: 1; }
         }
       `}</style>
     </div>

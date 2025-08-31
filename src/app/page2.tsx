@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
-import { saveAs } from 'file-saver';
+// Removed saveAs import - using manual download method for better Next.js compatibility
 import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType } from 'docx';
 import { UNITS } from '@/lib/units';
 import { SSICS } from '@/lib/ssic';
@@ -586,8 +586,23 @@ export default function MarineCorpsDirectivesPage() {
     setIsGenerating(true);
     
     try {
-      const directiveNumber = generateDirectiveNumber(formData);
-      const filename = `${directiveNumber.replace(/\s+/g, '_')}.docx`;
+      // Create filename using SSIC and Subject format (e.g., "1615.2 EXAMPLE SUBJECT.docx")
+      const ssic = formData.ssic_code || formData.ssic || '';
+      const subject = formData.subj || 'Document';
+      
+      let filename;
+      if (ssic && subject) {
+        // Clean the subject for filename (remove special characters but keep spaces)
+        const cleanSubject = subject
+          .replace(/[^a-zA-Z0-9\s]/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        filename = `${ssic} ${cleanSubject}.docx`;
+      } else {
+        // Fallback to directive number if missing SSIC or subject
+        const directiveNumber = generateDirectiveNumber(formData);
+        filename = `${directiveNumber.replace(/\s+/g, '_')}.docx`;
+      }
 
       const content: Paragraph[] = [];
 
@@ -827,8 +842,44 @@ export default function MarineCorpsDirectivesPage() {
         }]
       });
 
+      // Enhanced download function for reliable file downloads
+      const downloadFile = (blob: Blob, filename: string) => {
+        console.log('Downloading file:', filename, 'Size:', blob.size, 'bytes');
+        
+        try {
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = filename;
+          a.style.display = 'none';
+          a.style.position = 'absolute';
+          a.style.left = '-9999px';
+          document.body.appendChild(a);
+          a.click();
+          
+          // Clean up after delay
+          setTimeout(() => {
+            try {
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+            } catch (cleanupError) {
+              console.warn('Cleanup error (non-critical):', cleanupError);
+            }
+          }, 100);
+          
+          console.log('Download completed successfully');
+        } catch (error) {
+          console.error('Download failed:', error);
+          throw new Error('Unable to download file. Please check browser settings.');
+        }
+      };
+
       const blob = await Packer.toBlob(doc);
-      saveAs(blob, filename);
+      console.log('Document blob created, size:', blob.size, 'bytes');
+      console.log('Filename:', filename);
+      
+      // Use our reliable download function
+      downloadFile(blob, filename);
 
     } catch (error) {
       console.error("Error generating document:", error);
@@ -1400,7 +1451,7 @@ export default function MarineCorpsDirectivesPage() {
                   type="text" 
                   placeholder="e.g., 8 Jul 25"
                   value={formData.date}
-                  onChange={handleDateChange}
+                  onChange={(e) => handleDateChange(e.target.value)}
                 />
               </div>
 
