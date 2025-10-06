@@ -3525,7 +3525,7 @@ const clearParagraphContent = (paragraphId: number) => {
           opacity: 0.9,
           minWidth: '60px'
         }}>
-          âš–ï¸
+          📋
         </div>
         <div style={{ flex: 1 }}>
           <div style={{
@@ -3536,7 +3536,7 @@ const clearParagraphContent = (paragraphId: number) => {
             alignItems: 'center',
             gap: '10px'
           }}>
-           📋 Orders
+           Orders
             {formData.documentType === 'mco' && (
               <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
             )}
@@ -3608,7 +3608,7 @@ const clearParagraphContent = (paragraphId: number) => {
           opacity: 0.9,
           minWidth: '60px'
         }}>
-          ðŸ“¢
+          📢
         </div>
         <div style={{ flex: 1 }}>
           <div style={{
@@ -3619,7 +3619,7 @@ const clearParagraphContent = (paragraphId: number) => {
             alignItems: 'center',
             gap: '10px'
           }}>
-            📢 Bulletins
+            Bulletins
             {formData.documentType === 'mcbul' && (
               <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
             )}
