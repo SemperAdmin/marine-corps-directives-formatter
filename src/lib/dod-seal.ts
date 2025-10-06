@@ -1,6 +1,6 @@
 'use client';
 
-import { ImageRun, convertInchesToTwip, HorizontalPositionAlign, VerticalPositionAlign, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom } from 'docx';
+import { ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, HorizontalPositionAlign, VerticalPositionAlign, convertInchesToTwip } from 'docx';
 
 // Pre-encoded DoD seal SVG (simple version)
 const DOD_SEAL_SIMPLE = `data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTQ0IiBoZWlnaHQ9IjE0NCIgdmlld0JveD0iMCAwIDE0NCAxNDQiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPGNpcmNsZSBjeD0iNzIiIGN5PSI3MiIgcj0iNzAiIGZpbGw9IiMwMDMzNjYiIHN0cm9rZT0iI0ZGRDcwMCIgc3Ryb2tlLXdpZHRoPSI0Ii8+CiAgPGNpcmNsZSBjeD0iNzIiIGN5PSI3MiIgcj0iNTAiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI0ZGRDcwMCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgPGNpcmNsZSBjeD0iNzIiIGN5PSI3MiIgcj0iMzAiIGZpbGw9IiNGRkQ3MDAiLz4KICA8Y2lyY2xlIGN4PSI3MiIgY3k9IjcyIiByPSIyNSIgZmlsbD0iIzAwMzM2NiIvPgogIDx0ZXh0IHg9IjcyIiB5PSI3OCIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZmlsbD0iI0ZGRDcwMCIgZm9udC1mYW1pbHk9IkFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXNpemU9IjE0IiBmb250LXdlaWdodD0iYm9sZCI+RG9EPC90ZXh0PgogIDx0ZXh0IHg9IjcyIiB5PSIxMTAiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGZpbGw9IiNGRkQ3MDAiIGZvbnQtZmFtaWx5PSJBcmlhbCwgc2Fucy1zZXJpZiIgZm9udC1zaXplPSI4IiBmb250LXdlaWdodD0iYm9sZCI+REVQQVJUTUVOVCBPRIBERUZFTLNFPC90ZXh0Pgo8L3N2Zz4=`;
@@ -15,14 +15,9 @@ const DOD_SEAL_DETAILED = `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASMAAAE
 /**
  * Convert data URL to ArrayBuffer
  */
-function dataURLToArrayBuffer(dataURL: string): ArrayBuffer {
-  const base64 = dataURL.split(',')[1];
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
+async function dataUrlToArrayBuffer(dataUrl: string): Promise<ArrayBuffer> {
+  const response = await fetch(dataUrl);
+  return response.arrayBuffer();
 }
 
 /**
@@ -30,44 +25,29 @@ function dataURLToArrayBuffer(dataURL: string): ArrayBuffer {
  * @param useSimple - Use simple seal design instead of detailed version
  * @returns ImageRun configured for proper positioning
  */
-export function createDoDSeal(useSimple: boolean = false): ImageRun {
-  const sealData = useSimple ? DOD_SEAL_SIMPLE : DOD_SEAL_DETAILED;
-  const sealBuffer = dataURLToArrayBuffer(sealData);
-
+ * Create DoD seal image for document header
+ */
+export async function createDoDSeal(): Promise<ImageRun> {
+  const sealBuffer = await dataUrlToArrayBuffer(DOD_SEAL_DETAILED);
+  
   return new ImageRun({
     data: sealBuffer,
     transformation: {
-<<<<<<< HEAD
-      width: convertInchesToTwip(1.0), // 1.0 inch = 1440 TWIPs
-      height: convertInchesToTwip(1.0), // 1.0 inch = 1440 TWIPs
-=======
       width: convertInchesToTwip(0.067), // 1.0 inch = 1440 TWIPs
       height: convertInchesToTwip(0.067), // 1.0 inch = 1440 TWIPs
->>>>>>> feature/dod-seal-detailed
     },
     floating: {
       horizontalPosition: {
         relative: HorizontalPositionRelativeFrom.PAGE,
-<<<<<<< HEAD
-        align: HorizontalPositionAlign.LEFT,
-        offset: convertInchesToTwip(0.5), // 0.5 inches from left edge
-      },
-      verticalPosition: {
-        relative: VerticalPositionRelativeFrom.PAGE,
-        align: VerticalPositionAlign.TOP,
-        offset: convertInchesToTwip(0.5), // 0.5 inches from top edge
-=======
         offset: 458700
       },
       verticalPosition: {
         relative: VerticalPositionRelativeFrom.PAGE,
         offset: 458700
->>>>>>> feature/dod-seal-detailed
       },
     },
   });
 }
-
 /**
  * Get DoD seal as ArrayBuffer (for backward compatibility)
  * @param useSimple - Use simple seal design instead of detailed version
