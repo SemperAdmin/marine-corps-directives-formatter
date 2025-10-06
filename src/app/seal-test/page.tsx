@@ -13,7 +13,7 @@ export default function SealTestPage() {
       setTestStatus('Testing seal functions...');
       
       // Test 1: Get seal buffer
-      const buffer = getDoDSealBuffer();
+      const buffer = await getDoDSealBuffer();  // ✅ Add await
       console.log('Seal buffer size:', buffer.byteLength);
       setTestStatus(`Seal buffer created successfully. Size: ${buffer.byteLength} bytes`);
       
