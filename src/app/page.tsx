@@ -2930,7 +2930,7 @@ const generateDocument = useCallback(async () => {
   } finally {
     setIsGenerating(false);
   }
-},
+};
 
 const unitComboboxData = UNITS.map(unit => ({
   value: `${unit.uic}-${unit.ruc}-${unit.mcc}`,
