@@ -14,6 +14,13 @@ async function dataUrlToArrayBuffer(dataUrl: string): Promise<ArrayBuffer> {
 }
 
 /**
+ * Get DoD seal as ArrayBuffer for use in document generation
+ */
+export async function getDoDSealBuffer(): Promise<ArrayBuffer> {
+  return dataUrlToArrayBuffer(DOD_SEAL_DETAILED);
+}
+
+/**
  * Create DoD seal image for document header
  */
 export async function createDoDSeal(): Promise<ImageRun> {
