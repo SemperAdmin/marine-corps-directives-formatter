@@ -4956,6 +4956,7 @@ const clearParagraphContent = (paragraphId: number) => {
       </div>
 
       {/* Spinning animation for loading */}
+{/* Spinning animation for loading */}
       <style jsx>{`
         @keyframes spin {
           0% { transform: rotate(0deg); }
