@@ -4,7 +4,6 @@ on:
   push:
     branches: [ main, master ]
   pull_request:
-<<<<<<< HEAD
     branches: [ main, master ]
 
   # Allows you to run this workflow manually from the Actions tab
@@ -25,27 +24,16 @@ concurrency:
 jobs:
   # Build job
   build:
-=======
-    branches: [ main ]
-
-jobs:
-  build-and-deploy:
->>>>>>> feature/dod-seal-detailed
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-<<<<<<< HEAD
       
-=======
-        
->>>>>>> feature/dod-seal-detailed
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
-<<<<<<< HEAD
       
       - name: Install dependencies
         run: npm ci
@@ -53,8 +41,6 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
         with:
-          # Automatically inject basePath in your Next.js configuration file and disable
-          # server side image optimization (so you can use `next export`).
           static_site_generator: next
       
       - name: Build with Next.js
@@ -76,18 +62,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-=======
-          
-      - name: Install dependencies
-        run: npm ci
-        
-      - name: Build
-        run: npm run build
-        
-      - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./out
->>>>>>> feature/dod-seal-detailed
