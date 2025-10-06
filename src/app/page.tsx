@@ -2933,7 +2933,7 @@ const generateDocument = useCallback(async () => {
 };
 
 const unitComboboxData = UNITS.map(unit => ({
-  value: `${unit.uic}-${unit.ruc}-${unit.mcc}`, // Create a truly unique value
+  value: `${unit.uic}-${unit.ruc}-${unit.mcc}`,
   label: `${unit.unitName} (RUC: ${unit.ruc}, MCC: ${unit.mcc})`,
   ...unit,
 }));
