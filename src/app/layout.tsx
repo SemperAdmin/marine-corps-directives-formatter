@@ -1,10 +1,6 @@
 import type {Metadata} from 'next';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
-<<<<<<< HEAD
-import { Analytics } from '@vercel/analytics/next';
-=======
->>>>>>> feature/dod-seal-detailed
 
 export const metadata: Metadata = {
   title: 'Marine Corps Directives Formatter',
@@ -26,10 +22,6 @@ export default function RootLayout({
       <body className="font-body antialiased">
         {children}
         <Toaster />
-<<<<<<< HEAD
-        <Analytics />
-=======
->>>>>>> feature/dod-seal-detailed
       </body>
     </html>
   );
