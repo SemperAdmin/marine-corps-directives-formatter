@@ -3441,16 +3441,300 @@ const clearParagraphContent = (paragraphId: number) => {
             margin-left: 10px;
         }
         
-        @media (max-width: 768px) {
-          .main-container {
-            margin: 10px;
-            padding: 20px;
-          }
-          .radio-group {
-            flex-direction: column;
-            gap: 10px;
-          }
-        }
+@media (max-width: 768px) {
+  /* Container adjustments */
+  .main-container {
+    margin: 10px !important;
+    padding: 15px !important;
+  }
+
+  /* Title adjustments */
+  .main-title {
+    font-size: 1.75rem !important;
+  }
+
+  /* Section spacing */
+  .form-section {
+    padding: 15px !important;
+    margin-bottom: 20px !important;
+  }
+
+  .section-legend {
+    font-size: 0.95rem !important;
+    padding: 10px 15px !important;
+  }
+
+  /* Input group - Stack vertically */
+  .input-group {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    box-shadow: none !important;
+  }
+
+  .input-group-text {
+    min-width: 100% !important;
+    width: 100% !important;
+    border-radius: 8px 8px 0 0 !important;
+    padding: 10px 12px !important;
+    font-size: 0.9rem !important;
+    text-align: left !important;
+  }
+
+  .form-control {
+    border-radius: 0 0 8px 8px !important;
+    min-height: 44px !important;
+    font-size: 16px !important;
+  }
+
+  /* Radio group - Stack vertically */
+  .radio-group {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  /* Button adjustments */
+  .btn {
+    font-size: 0.85rem !important;
+    padding: 10px 16px !important;
+    white-space: normal !important;
+    min-height: 44px !important;
+  }
+
+  .generate-btn {
+    font-size: 1rem !important;
+    padding: 12px 20px !important;
+    min-width: 100% !important;
+  }
+
+  /* Paragraph controls - Stack/wrap better */
+  .paragraph-controls {
+    flex-wrap: wrap !important;
+    gap: 8px !important;
+  }
+
+  .paragraph-controls button {
+    flex: 1 1 calc(50% - 4px) !important;
+    min-width: 120px !important;
+    font-size: 0.85rem !important;
+  }
+
+  /* Paragraph containers - Reduce indentation */
+  .paragraph-container {
+    padding: 12px !important;
+    margin-bottom: 15px !important;
+  }
+
+  .paragraph-container[data-level="1"] {
+    margin-left: 0px !important;
+  }
+
+  .paragraph-container[data-level="2"] {
+    margin-left: 15px !important;
+  }
+
+  .paragraph-container[data-level="3"] {
+    margin-left: 30px !important;
+  }
+
+  .paragraph-container[data-level="4"] {
+    margin-left: 45px !important;
+  }
+
+  .paragraph-container[data-level="5"],
+  .paragraph-container[data-level="6"],
+  .paragraph-container[data-level="7"],
+  .paragraph-container[data-level="8"] {
+    margin-left: 60px !important;
+  }
+
+  /* Paragraph item adjustments */
+  .paragraph-item {
+    padding: 12px !important;
+  }
+
+  /* Smart paragraph buttons */
+  .btn-smart-main,
+  .btn-smart-sub,
+  .btn-smart-same,
+  .btn-smart-up {
+    font-size: 0.75rem !important;
+    padding: 6px 10px !important;
+    margin-right: 4px !important;
+    margin-bottom: 6px !important;
+    min-width: 80px !important;
+  }
+
+  /* Document type selector grid */
+  div[style*="gridTemplateColumns"] {
+    grid-template-columns: 1fr !important;
+    gap: 15px !important;
+  }
+
+  /* Saved letters section */
+  .saved-letter-item {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 10px !important;
+  }
+
+  .saved-letter-actions {
+    width: 100% !important;
+    display: flex !important;
+    gap: 8px !important;
+  }
+
+  .saved-letter-actions button {
+    flex: 1 !important;
+    margin-left: 0 !important;
+  }
+
+  /* Textarea adjustments */
+  textarea.form-control {
+    min-height: 100px !important;
+    font-size: 16px !important;
+  }
+
+  /* Validation messages */
+  .validation-summary {
+    padding: 12px !important;
+    font-size: 0.85rem !important;
+  }
+
+  .structure-error,
+  .acronym-error {
+    font-size: 0.8rem !important;
+    padding: 8px 10px !important;
+  }
+
+  /* Distribution entries */
+  .distribution-entry {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  /* Reference and enclosure inputs */
+  .reference-input,
+  .enclosure-input {
+    width: 100% !important;
+  }
+
+  /* Voice input controls */
+  .voice-controls {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .voice-controls button {
+    width: 100% !important;
+  }
+
+  /* Tab stops and indentation helpers */
+  .paragraph-level-badge {
+    font-size: 0.7rem !important;
+    padding: 3px 6px !important;
+  }
+
+  .paragraph-number-preview {
+    font-size: 0.95rem !important;
+  }
+
+  /* Header text on cards */
+  h1, h2, h3, h4 {
+    font-size: calc(100% - 0.2rem) !important;
+  }
+
+  /* Combobox dropdowns */
+  .combobox-trigger {
+    font-size: 0.9rem !important;
+  }
+
+  /* Icon spacing */
+  i[class*="fa-"] {
+    margin-right: 6px !important;
+  }
+
+  /* Modal/dialog adjustments if present */
+  .modal-content,
+  .dialog-content {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    margin: 10px !important;
+  }
+
+  /* Prevent horizontal scroll */
+  body {
+    overflow-x: hidden !important;
+  }
+
+  .main-container,
+  .form-section,
+  .input-group {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  /* Touch target sizes (minimum 44x44px) */
+  button,
+  input,
+  select,
+  textarea,
+  a {
+    min-height: 44px !important;
+  }
+
+  /* Reduce margins for better space usage */
+  .mb-4 {
+    margin-bottom: 1rem !important;
+  }
+
+  .mt-4 {
+    margin-top: 1rem !important;
+  }
+}
+
+/* Extra small devices (phones in portrait, less than 576px) */
+@media (max-width: 576px) {
+  .main-container {
+    margin: 5px !important;
+    padding: 10px !important;
+    border-radius: 15px !important;
+  }
+
+  .main-title {
+    font-size: 1.5rem !important;
+  }
+
+  .section-legend {
+    font-size: 0.85rem !important;
+    padding: 8px 12px !important;
+  }
+
+  .btn {
+    font-size: 0.8rem !important;
+    padding: 8px 12px !important;
+  }
+
+  .paragraph-controls button {
+    flex: 1 1 100% !important;
+    min-width: 100% !important;
+  }
+
+  /* Stack all paragraph control buttons vertically on very small screens */
+  .btn-smart-main,
+  .btn-smart-sub,
+  .btn-smart-same,
+  .btn-smart-up {
+    width: 100% !important;
+    margin-right: 0 !important;
+  }
+}
+
+/* Tablet/Medium devices (576px to 768px) */
+@media (min-width: 576px) and (max-width: 768px) {
+  .paragraph-controls button {
+    flex: 1 1 calc(33.333% - 6px) !important;
+  }
+}
       `}</style>
 
       <div className="marine-gradient-bg">
