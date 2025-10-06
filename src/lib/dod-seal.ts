@@ -1,7 +1,6 @@
 import { ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, convertInchesToTwip } from 'docx';
 // 💡 THE FIX: Import the data constants from the new, separate file
-import { DOD_SEAL_DETAILED, DOD_SEAL_SIMPLE } from './dod-seal-data';
-
+import { DOD_SEAL_DETAILED} from './dod-seal-data';
 
 // Keep the helper function exactly as it was
 async function dataUrlToArrayBuffer(dataUrl: string): Promise<ArrayBuffer> {
@@ -38,3 +37,4 @@ export async function createDoDSeal(): Promise<ImageRun> {
     },
   });
 }
+
