@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
           cache: 'npm'
       
       - name: Install dependencies
@@ -41,6 +41,8 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
         with:
+          # Automatically inject basePath in your Next.js configuration file and disable
+          # server side image optimization (so you can use `next export`).
           static_site_generator: next
       
       - name: Build with Next.js
