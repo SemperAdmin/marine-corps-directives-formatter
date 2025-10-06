@@ -69,7 +69,6 @@ export default function NavalLetterGenerator() {
     const ssicPattern = /^\d{4,5}$/;
     if (!value) {
       setValidation(prev => ({ ...prev, ssic: { isValid: false, message: '' } }));
-<<<<<<< HEAD
       return;
     }
     
