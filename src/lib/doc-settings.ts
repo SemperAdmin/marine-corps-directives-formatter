@@ -5,7 +5,11 @@ export const DOC_SETTINGS = {
   font: "Times New Roman",
   fontSize: 24, // 12pt
   pageMargins: {
+<<<<<<< HEAD
     top: 0,      // 1" top
+=======
+    top: 1440,      // 1" top
+>>>>>>> feature/dod-seal-detailed
     bottom: 1440,   // 1" bottom
     left: 1440,     // 1" left
     right: 1440,    // 1" right
@@ -100,6 +104,12 @@ export const createDateLine = (date: string) => {
 };
 
 // Helper to create signature block
+<<<<<<< HEAD
+=======
+// Backward-compatible alias for existing usage
+export const createFromToViaLine = (label: string, value: string) => createFromToLine(label, value);
+
+>>>>>>> feature/dod-seal-detailed
 export const createSignatureBlock = (name: string, delegation: string | null = null) => {
   const lines = [
     new TextRun({

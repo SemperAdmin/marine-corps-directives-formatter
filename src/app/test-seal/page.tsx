@@ -4970,8 +4970,4 @@ const clearParagraphContent = (paragraphId: number) => {
       `}</style>
     </div>
   );
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> feature/dod-seal-detailed

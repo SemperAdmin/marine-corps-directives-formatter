@@ -4,9 +4,17 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 // Removed saveAs import - using manual download method for better Next.js compatibility
+<<<<<<< HEAD
 import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType } from 'docx';
 import { UNITS } from '@/lib/units';
 import { SSICS } from '@/lib/ssic';
+=======
+import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, Header } from 'docx';
+import { UNITS } from '@/lib/units';
+import { SSICS } from '@/lib/ssic';
+// Import DoD seal functionality
+import { createDoDSeal, getDoDSealBuffer } from '@/lib/dod-seal';
+>>>>>>> feature/dod-seal-detailed
 
 // ===============================
 // INTERFACES & TYPES
@@ -582,6 +590,7 @@ export default function MarineCorpsDirectivesPage() {
   // DOCUMENT GENERATION
   // ===============================
 
+<<<<<<< HEAD
   const generateDocument = async () => {
     setIsGenerating(true);
     
@@ -889,6 +898,180 @@ export default function MarineCorpsDirectivesPage() {
     }
   };
 
+=======
+  const generateBasicLetter = async (formData: FormData) => {
+    try {
+      // Create document with DoD seal in header
+      const doc = new Document({
+        sections: [{
+          headers: {
+            first: new Header({
+              children: [
+                new Paragraph({
+                  children: [createDoDSeal()],
+                }),
+              ],
+            }),
+          },
+        children: [
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: "UNITED STATES MARINE CORPS",
+                bold: true,
+                font: "Times New Roman",
+                size: 20,
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.line1 || "",
+                font: "Times New Roman",
+                size: 16,
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.line2 || "",
+                font: "Times New Roman",
+                size: 16,
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.line3 || "",
+                font: "Times New Roman",
+                size: 16,
+              }),
+            ],
+            alignment: AlignmentType.CENTER,
+          }),
+          new Paragraph({
+            text: "",
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.ssic || "",
+                font: "Times New Roman",
+                size: 24,
+              }),
+            ],
+            alignment: AlignmentType.LEFT,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.originatorCode || "",
+                font: "Times New Roman",
+                size: 24,
+              }),
+            ],
+            alignment: AlignmentType.LEFT,
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.date || "",
+                font: "Times New Roman",
+                size: 24,
+              }),
+            ],
+            alignment: AlignmentType.LEFT,
+          }),
+          new Paragraph({
+            text: "",
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: formData.documentType === 'mco' 
+                  ? 'MARINE CORPS ORDER'
+                  : formData.documentType === 'mcbul'
+                  ? 'MARINE CORPS BULLETIN'
+                  : 'MARINE CORPS ORDER',
+                font: "Times New Roman",
+                size: 24,
+                underline: {},
+              }),
+            ],
+            alignment: AlignmentType.LEFT,
+          }),
+          new Paragraph({
+            text: "",
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: "From:\t" + (formData.from || "Commandant of the Marine Corps"),
+                font: "Times New Roman",
+                size: 24,
+              }),
+            ],
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: "To:\t" + (formData.to || "Distribution List"),
+                font: "Times New Roman",
+                size: 24,
+              }),
+            ],
+          }),
+          new Paragraph({
+            text: "",
+          }),
+          new Paragraph({
+            children: [
+              new TextRun({
+                text: "Subj:\t" + (formData.subj || "MARINE CORPS DIRECTIVES MANAGEMENT PROGRAM (MCDMP)"),
+                font: "Times New Roman",
+                size: 24,
+              }),
+            ],
+          }),
+        ],
+      });
+
+      // Generate and download the document
+      const blob = await Packer.toBlob(doc);
+    
+      // Create filename
+      const filename = `${formData.ssic || 'MCO'} ${formData.subj || 'DIRECTIVE'}.docx`;
+    
+      // Download file
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      console.log('Document generated successfully');
+    } catch (error) {
+      console.error('Error generating document:', error);
+      throw new Error('Failed to generate document: ' + (error as Error).message);
+    }
+  };
+
+  const generateDocument = async () => {
+    // This function would be implemented to call generateBasicLetter with the form data
+    // For now, we'll leave it as a placeholder or implement it based on the form data
+    console.log('Document generation would be implemented here');
+  };
+
+>>>>>>> feature/dod-seal-detailed
   // ===============================
   // COMPONENT SECTIONS
   // ===============================
@@ -917,6 +1100,353 @@ export default function MarineCorpsDirectivesPage() {
               {showRef ? 'Hide References' : 'Add References'}
             </button>
           </div>
+<<<<<<< HEAD
+=======
+          <div className="flex flex-col gap-2">
+            {showRef && references.map((ref, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={ref}
+                  onChange={(e) => updateItem(index, e.target.value)}
+                  className="form-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeItem(index)}
+                  className="btn btn-danger btn-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addItem}
+              className="btn btn-primary btn-sm"
+            >
+              Add Reference
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const EnclosuresSection = ({ enclosures, setEnclosures }: { enclosures: string[], setEnclosures: (encls: string[]) => void }) => {
+    const [showEncl, setShowEncl] = useState(false);
+
+    useEffect(() => {
+      setShowEncl(enclosures.some(e => e.trim() !== ''));
+    }, [enclosures]);
+
+    const addItem = () => setEnclosures([...enclosures, '']);
+    const removeItem = (index: number) => setEnclosures(enclosures.filter((_, i) => i !== index));
+    const updateItem = (index: number, value: string) => setEnclosures(enclosures.map((item, i) => i === index ? value : item));
+
+    return (
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-lg font-semibold text-gray-800">Enclosures</h3>
+            <button 
+              type="button" 
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowEncl(!showEncl)}
+            >
+              {showEncl ? 'Hide Enclosures' : 'Add Enclosures'}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {showEncl && enclosures.map((encl, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={encl}
+                  onChange={(e) => updateItem(index, e.target.value)}
+                  className="form-input"
+                />
+                <button
+                  type="button"
+                  onClick={() => removeItem(index)}
+                  className="btn btn-danger btn-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addItem}
+              className="btn btn-primary btn-sm"
+            >
+              Add Enclosure
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  const ParagraphsSection = ({ paragraphs, setParagraphs }: { paragraphs: Paragraph[], setParagraphs: (p: Paragraph[]) => void }) => {
+    const [showParas, setShowParas] = useState(false);
+
+    useEffect(() => {
+      setShowParas(paragraphs.some(p => p.content.trim() !== ''));
+    }, [paragraphs]);
+
+    const addItem = () => setParagraphs([...paragraphs, { id: uuidv4(), content: '', level: 1 }]);
+    const removeItem = (id: string) => setParagraphs(paragraphs.filter(p => p.id !== id));
+    const updateItem = (id: string, value: string) => {
+      const cleanedContent = value.replace(/\s+/g, ' ').trim();
+      setParagraphs(prev => prev.map(p => p.id === id ? { ...p, content: cleanedContent } : p));
+      setTimeout(() => validateParagraphStructure(), 100);
+    };
+
+    return (
+      <Card className="mb-4">
+        <CardContent className="p-4">
+          <div className="flex justify-between items-center mb-3">
+            <h3 className="text-lg font-semibold text-gray-800">Paragraphs</h3>
+            <button 
+              type="button" 
+              className="btn btn-primary btn-sm"
+              onClick={() => setShowParas(!showParas)}
+            >
+              {showParas ? 'Hide Paragraphs' : 'Add Paragraphs'}
+            </button>
+          </div>
+          <div className="flex flex-col gap-2">
+            {showParas && paragraphs.map((para, index) => (
+              <div key={para.id} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={para.content}
+                  onChange={(e) => updateItem(para.id, e.target.value)}
+                  className="form-input"
+                />
+                <div className="flex items-center gap-1">
+                  <label htmlFor={`level-${para.id}`}>Level:</label>
+                  <input
+                    type="number"
+                    id={`level-${para.id}`}
+                    value={para.level}
+                    onChange={(e) => {
+                      const newLevel = parseInt(e.target.value, 10);
+                      setParagraphs(prev => prev.map(p => p.id === para.id ? { ...p, level: newLevel } : p));
+                      setTimeout(() => validateParagraphStructure(), 100);
+                    }}
+                    className="form-input"
+                    min="1"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeItem(para.id)}
+                  className="btn btn-danger btn-sm"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={addItem}
+              className="btn btn-primary btn-sm"
+            >
+              Add Paragraph
+            </button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  return (
+    <div className="container mx-auto p-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-2">
+            <label htmlFor="ssic_code">SSIC Code:</label>
+            <input
+              type="text"
+              id="ssic_code"
+              value={formData.ssic_code}
+              onChange={(e) => setFormData(prev => ({ ...prev, ssic_code: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="originatorCode">Originator Code:</label>
+            <input
+              type="text"
+              id="originatorCode"
+              value={formData.originatorCode}
+              onChange={(e) => setFormData(prev => ({ ...prev, originatorCode: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="date">Date:</label>
+            <input
+              type="text"
+              id="date"
+              value={formData.date}
+              onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="from">From:</label>
+            <input
+              type="text"
+              id="from"
+              value={formData.from}
+              onChange={(e) => setFormData(prev => ({ ...prev, from: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="to">To:</label>
+            <input
+              type="text"
+              id="to"
+              value={formData.to}
+              onChange={(e) => setFormData(prev => ({ ...prev, to: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="subj">Subject:</label>
+            <input
+              type="text"
+              id="subj"
+              value={formData.subj}
+              onChange={(e) => setFormData(prev => ({ ...prev, subj: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="designationLine">Designation Line:</label>
+            <input
+              type="text"
+              id="designationLine"
+              value={formData.designationLine}
+              onChange={(e) => setFormData(prev => ({ ...prev, designationLine: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="startingReferenceLevel">Starting Reference Level:</label>
+            <input
+              type="text"
+              id="startingReferenceLevel"
+              value={formData.startingReferenceLevel}
+              onChange={(e) => setFormData(prev => ({ ...prev, startingReferenceLevel: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="startingEnclosureNumber">Starting Enclosure Number:</label>
+            <input
+              type="text"
+              id="startingEnclosureNumber"
+              value={formData.startingEnclosureNumber}
+              onChange={(e) => setFormData(prev => ({ ...prev, startingEnclosureNumber: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="sig">Signature:</label>
+            <textarea
+              id="sig"
+              value={formData.sig}
+              onChange={(e) => setFormData(prev => ({ ...prev, sig: e.target.value }))}
+              className="form-input"
+              rows={4}
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="distributionStatement">Distribution Statement:</label>
+            <input
+              type="text"
+              id="distributionStatement"
+              value={formData.distributionStatement}
+              onChange={(e) => setFormData(prev => ({ ...prev, distributionStatement: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="documentType">Document Type:</label>
+            <select
+              id="documentType"
+              value={formData.documentType}
+              onChange={(e) => setFormData(prev => ({ ...prev, documentType: e.target.value }))}
+              className="form-input"
+            >
+              <option value="mco">MCO</option>
+              <option value="mcbul">MCBUL</option>
+              <option value="supplement">Supplement</option>
+            </select>
+          </div>
+          <div className="flex flex-col gap-2">
+            <label htmlFor="parentDirective">Parent Directive:</label>
+            <input
+              type="text"
+              id="parentDirective"
+              value={formData.parentDirective}
+              onChange={(e) => setFormData(prev => ({ ...prev, parentDirective: e.target.value }))}
+              className="form-input"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={generateDocument}
+            className="btn btn-primary"
+            disabled={isGenerating}
+          >
+            {isGenerating ? 'Generating...' : 'Generate Document'}
+          </button>
+        </div>
+        <div className="flex flex-col gap-4">
+          <Card className="mb-4">
+            <CardContent className="p-4">
+              <div className="flex justify-between items-center mb-3">
+                <h3 className="text-lg font-semibold text-gray-800">Unit Information</h3>
+                <button
+                  type="button"
+                  onClick={clearUnitInfo}
+                  className="btn btn-danger btn-sm"
+                >
+                  Clear
+                </button>
+              </div>
+              <Combobox
+                value={formData.ssic_code}
+                onChange={handleUnitSelect}
+                className="form-input"
+                placeholder="Select a unit"
+              >
+                {unitComboboxData.map(unit => (
+                  <ComboboxOption key={unit.value} value={unit.value}>
+                    {unit.label}
+                  </ComboboxOption>
+                ))}
+              </Combobox>
+            </CardContent>
+          </Card>
+          <ReferencesSection references={references} setReferences={setReferences} />
+          <EnclosuresSection enclosures={enclosures} setEnclosures={setEnclosures} />
+          <ParagraphsSection paragraphs={paragraphs} setParagraphs={setParagraphs} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+            </button>
+          </div>
+>>>>>>> feature/dod-seal-detailed
           
           {showRef && (
             <div className="space-y-2">

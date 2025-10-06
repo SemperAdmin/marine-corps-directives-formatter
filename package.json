@@ -35,12 +35,20 @@
     "@vercel/analytics": "^1.5.0",
     "autoprefixer": "^10.4.21",
     "class-variance-authority": "^0.7.1",
+<<<<<<< HEAD
+=======
+    "client-only": "^0.0.1",
+>>>>>>> feature/dod-seal-detailed
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "date-fns": "^3.6.0",
     "docx": "^8.5.0",
     "embla-carousel-react": "^8.6.0",
     "file-saver": "^2.0.5",
+<<<<<<< HEAD
+=======
+    "glob": "^11.0.3",
+>>>>>>> feature/dod-seal-detailed
     "lucide-react": "^0.525.0",
     "next": "^15.4.2",
     "postcss": "^8.5.6",
@@ -49,6 +57,10 @@
     "react-dom": "^18.3.1",
     "react-hook-form": "^7.60.0",
     "recharts": "^3.1.0",
+<<<<<<< HEAD
+=======
+    "rimraf": "^6.0.1",
+>>>>>>> feature/dod-seal-detailed
     "tailwind-merge": "^3.3.1",
     "tailwindcss": "^4.1.11"
   },
