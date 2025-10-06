@@ -2445,7 +2445,7 @@ const formatDistributionStatement = (distributionStatement: FormData['distributi
 const generateBasicLetter = async () => {
   try {
     // Use local base64 DoD seal
-    const sealBuffer = getDoDSealBuffer();
+    const sealBufferValue = await getDoDSealBuffer();
 
     const content = [];
     
@@ -2793,9 +2793,9 @@ const generateBasicLetter = async () => {
       first: new Header({
         children: [
           // DOD Seal (if buffer available)
-          ...(sealBuffer ? [
+          ...(sealBufferValue ? [
             new Paragraph({
-              children: [createDoDSeal()]
+              children: [createDoDSeal(sealBufferValue)]
             })
           ] : [])
         ]
@@ -2885,7 +2885,7 @@ const generateBasicLetter = async () => {
   }
 };
 
-const generateDocument = async () => {
+const generateDocument = useCallback(async () => { 
   setIsGenerating(true);
   try {
     saveLetter(); // Save the current state before generating
@@ -2933,7 +2933,7 @@ const generateDocument = async () => {
 };
 
 const unitComboboxData = UNITS.map(unit => ({
-  value: `${unit.uic}-${unit.ruc}-${unit.mcc}`, // Create a truly unique value
+  value: `${unit.uic}-${unit.ruc}-${unit.mcc}`,
   label: `${unit.unitName} (RUC: ${unit.ruc}, MCC: ${unit.mcc})`,
   ...unit,
 }));
