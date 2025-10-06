@@ -1960,6 +1960,5 @@ export default function NavalLetterGenerator() {
     </div>
   );
 }
-=======
+
       return
->>>>>>> feature/dod-seal-detailed
