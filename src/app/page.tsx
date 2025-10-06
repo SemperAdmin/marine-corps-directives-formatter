@@ -2927,10 +2927,10 @@ const generateDocument = useCallback(async () => {
   } catch (error) {
     console.error("Error generating document:", error);
     alert("Error generating document: " + (error as Error).message);
-  } finally {
+} finally {
     setIsGenerating(false);
   }
-};
+}, [formData, saveLetter, generateBasicLetter]);
 
 const unitComboboxData = UNITS.map(unit => ({
   value: `${unit.uic}-${unit.ruc}-${unit.mcc}`,
