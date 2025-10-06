@@ -376,15 +376,15 @@ interface ParagraphData {
 interface FormData {
   documentType: 'basic' | 'endorsement' | 'mco' | 'mcbul';
   
-  // âœ… NEW: Essential Directive Elements
+  // ✅… NEW: Essential Directive Elements
   ssic_code: string; // Standard Subject Identification Code
   consecutive_point?: number; // Sequential number within SSIC group (Orders only)
   revision_suffix?: string; // Letter indicating revision (A, B, C...)
   sponsor_code: string; // Originating office identifier
   date_signed: string; // Date directive was officially signed (DD MMM YYYY)
-  designationLine?: string; // âœ… ADD: New designation line field
+  designationLine?: string; // ✅… ADD: New designation line field
   
-  // âœ… REMOVED: Directive Authority and Dating fields
+  // ✅… REMOVED: Directive Authority and Dating fields
   // directiveAuthority: DirectiveAuthority;
   // effectiveDate?: string;
   // signatureDate: string;
@@ -402,7 +402,7 @@ interface FormData {
   distributionScope: 'total-force' | 'active-duty' | 'reserves';
   reviewCycle?: 'annual' | 'biennial' | 'triennial';
   
-  // âœ… NEW: Distribution Statement
+  // ✅… NEW: Distribution Statement
   distributionStatement: {
     code: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X';
     reason?: string;
@@ -410,7 +410,7 @@ interface FormData {
     originatingCommand?: string;
   };
 
-  // âœ… EXISTING: Standard fields
+  // ✅… EXISTING: Standard fields
   startingReferenceLevel: string;
   startingEnclosureNumber: string;
   line1: string;
@@ -432,13 +432,13 @@ interface FormData {
   distribution: DistributionEntry[];
   paragraphs: ParagraphData[];
   
-  // âœ… ADD: Missing reference-related properties
+  // ✅… ADD: Missing reference-related properties
   referenceWho: string;
   referenceType: string;
   referenceDate: string;
   basicLetterReference: string;
   
-  // âœ… ADD: Missing endorsement property
+  // ✅… ADD: Missing endorsement property
   endorsementLevel?: string;
 }
 
@@ -446,13 +446,13 @@ interface SavedLetter {
   id: string;
   documentType: string;
   
-  // âœ… NEW: Essential Directive Elements
+  // ✅… NEW: Essential Directive Elements
   ssic_code?: string;
   consecutive_point?: number;
   revision_suffix?: string;
   sponsor_code?: string;
   date_signed?: string;
-  designationLine?: string; // âœ… ADD: Missing designationLine property
+  designationLine?: string; // ✅… ADD: Missing designationLine property
   directiveAuthority?: DirectiveAuthority;
   effectiveDate?: string;
   signatureDate?: string;
@@ -518,14 +518,14 @@ interface DirectiveAuthority {
   delegatedTo?: string;
 }
 
-// âœ… NEW: Directive Number Interface
+// ✅… NEW: Directive Number Interface
 interface DirectiveNumber {
   ssic: string; // 4-5 digit code
   consecutivePoint: string; // Sequential ID
   revision?: string; // A, B, C (excluding I, O, Q)
 }
 
-// âœ… NEW: Authority Matrix
+// ✅… NEW: Authority Matrix
 const DIRECTIVE_AUTHORITY_MATRIX = {
   mco: {
     'marine-corps-wide': ['Commandant of the Marine Corps'],
@@ -537,8 +537,8 @@ const DIRECTIVE_AUTHORITY_MATRIX = {
   }
 };
 
-// âœ… NEW: Validation Function
-// âœ… UPDATED: Enhanced validation for directive elements
+// ✅… NEW: Validation Function
+// ✅… UPDATED: Enhanced validation for directive elements
 const validateDirectiveElements = (formData: FormData): string[] => {
   const errors: string[] = [];
 
@@ -586,7 +586,7 @@ const validateDirectiveElements = (formData: FormData): string[] => {
   return errors;
 };
 
-// âœ… UPDATED: Enhanced SSIC-Based Numbering System
+// ✅… UPDATED: Enhanced SSIC-Based Numbering System
 const generateDirectiveNumber = (formData: FormData): string => {
   const { ssic_code, consecutive_point, revision_suffix, documentType } = formData;
   
@@ -620,7 +620,7 @@ const generateDirectiveNumber = (formData: FormData): string => {
   }
 };
 
-// âœ… NEW: Template Generation
+// ✅… NEW: Template Generation
 const generateDirectiveTemplate = (type: 'mco' | 'mcbul') => {
   const templates = {
     mco: {
@@ -661,7 +661,7 @@ const COMMON_IAC_CODES = [
   { code: 'IAC-H', description: 'Headquarters Elements' }
 ];
 
-// âœ… NEW: Common Sponsor Codes
+// ✅… NEW: Common Sponsor Codes
 const COMMON_SPONSOR_CODES = [
   { code: 'ARDB', description: 'Manpower and Reserve Affairs' },
   { code: 'MM', description: 'Manpower Management' },
@@ -678,7 +678,7 @@ const COMMON_SPONSOR_CODES = [
   { code: 'MCRC', description: 'Marine Corps Recruiting Command' }
 ];
 
-// âœ… NEW: Validation Function for Distribution Statement
+// ✅… NEW: Validation Function for Distribution Statement
 const validateDistributionStatement = (distributionStatement: FormData['distributionStatement']): string[] => {
   const errors: string[] = [];
   const statement = DISTRIBUTION_STATEMENTS[distributionStatement.code];
@@ -762,7 +762,7 @@ const COMMON_RESTRICTION_REASONS = [
   'operational security'
 ];
 
-// âœ… NEW: Field Command Signature Authority Rules
+// ✅… NEW: Field Command Signature Authority Rules
 const FIELD_COMMAND_SIGNATURE_AUTHORITY = {
   principal_authority: {
     title: "Commanding Officer, Commanding General, or Officer in Charge",
@@ -795,7 +795,7 @@ const FIELD_COMMAND_SIGNATURE_AUTHORITY = {
   }
 };
 
-// âœ… NEW: Acting Authority Designations
+// ✅… NEW: Acting Authority Designations
 const ACTING_AUTHORITY_DESIGNATIONS = {
   formal_appointment: {
     requirement: "Must be formally appointed or delegated",
@@ -825,7 +825,7 @@ const ACTING_AUTHORITY_DESIGNATIONS = {
   }
 };
 
-// âœ… NEW: Field Command Signature Block Formats
+// ✅… NEW: Field Command Signature Block Formats
 const FIELD_COMMAND_SIGNATURE_FORMATS = {
   commanding_officer: {
     name_line: "Full name in all caps or preferred format",
@@ -847,7 +847,7 @@ const FIELD_COMMAND_SIGNATURE_FORMATS = {
   }
 };
 
-// âœ… NEW: Helper function to generate signature block based on authority type
+// ✅… NEW: Helper function to generate signature block based on authority type
 const generateSignatureBlock = (authorityType: string, name: string, isActing: boolean = false): { nameLine: string; titleLine: string } => {
   const formats = FIELD_COMMAND_SIGNATURE_FORMATS;
   
@@ -872,7 +872,7 @@ const generateSignatureBlock = (authorityType: string, name: string, isActing: b
   };
 };
 
-// âœ… NEW: Validation function for signature authority
+// ✅… NEW: Validation function for signature authority
 const validateSignatureAuthority = (signerName: string, authorityType: string, isDelegated: boolean): string[] => {
   const errors: string[] = [];
   
@@ -1151,7 +1151,7 @@ function StructuredReferenceInput({ formData, setFormData }: StructuredReference
           </div>
           <div>
             <span style={{ fontWeight: '600', color: '#1e40af' }}>Examples:</span>
-            <span style={{ color: '#1e40af', marginLeft: '8px' }}>on CO's ltr dtd 12 Jul 25 â€¢ on GySgt Admin's AA Form dtd 15 Aug 25</span>
+            <span style={{ color: '#1e40af', marginLeft: '8px' }}>on CO's ltr dtd 12 Jul 25 • on GySgt Admin's AA Form dtd 15 Aug 25</span>
           </div>
         </div>
         
@@ -1273,17 +1273,17 @@ function StructuredReferenceInput({ formData, setFormData }: StructuredReference
           <div style={{ marginTop: '12px' }}>
             {!formData.referenceWho && (
               <div style={{ color: '#dc2626', fontSize: '14px', marginBottom: '4px' }}>
-                â€¢ Please specify who originated the basic letter
+                • Please specify who originated the basic letter
               </div>
             )}
             {!formData.referenceType && (
               <div style={{ color: '#dc2626', fontSize: '14px', marginBottom: '4px' }}>
-                â€¢ Please select the document type
+                • Please select the document type
               </div>
             )}
             {!formData.referenceDate && (
               <div style={{ color: '#dc2626', fontSize: '14px', marginBottom: '4px' }}>
-                â€¢ Please enter the document date
+                • Please enter the document date
               </div>
             )}
           </div>
@@ -1649,7 +1649,7 @@ export default function MarineCorpsDirectivesFormatter() {
     revision_suffix: undefined,
     sponsor_code: '',
     date_signed: '',
-    designationLine: '', // âœ… ADD: Initialize designation line
+    designationLine: '', // ✅… ADD: Initialize designation line
     cancellationDate: '', // MCBul only
     cancellationType: 'contingent', // Default to contingent
     cancellationContingency: '', // MCBul contingency description
@@ -1666,7 +1666,7 @@ export default function MarineCorpsDirectivesFormatter() {
     originatorCode: '',
     date: '',
     from: '',
-    to: 'Distribution List', // âœ… SET: Default value
+    to: 'Distribution List', // ✅… SET: Default value
     subj: '',
     sig: '',
     delegationText: [''],
@@ -1677,19 +1677,19 @@ export default function MarineCorpsDirectivesFormatter() {
     enclosures: [],
     distribution: [],
     paragraphs: [],
-    // âœ… ADD: Missing reference properties
+    // ✅… ADD: Missing reference properties
     referenceWho: '',
     referenceType: '',
     referenceDate: '',
     basicLetterReference: '',
-    // âœ… ADD: Missing endorsement property
+    // ✅… ADD: Missing endorsement property
     endorsementLevel: '1st'
   });
 
   const [validation, setValidation] = useState<ValidationState>({
     subj: { isValid: false, message: '' },
     from: { isValid: false, message: '' }
-    // âœ… REMOVED: to validation
+    // ✅… REMOVED: to validation
   });
 
   const [showRef, setShowRef] = useState(false);
@@ -1894,14 +1894,14 @@ useEffect(() => {
     setFormData({
       documentType: letterToLoad.documentType as 'mco' | 'mcbul',
 
-    // âœ… NEW: Essential Directive Elements
+    // ✅… NEW: Essential Directive Elements
       distributionStatement: {
         code: (letterToLoad.distributionStatement?.code as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X') || 'A',
         reason: letterToLoad.distributionStatement?.reason,
         dateOfDetermination: letterToLoad.distributionStatement?.dateOfDetermination,
         originatingCommand: letterToLoad.distributionStatement?.originatingCommand
       },
-      // âœ… ADD: Missing properties
+      // ✅… ADD: Missing properties
       ssic_code: letterToLoad.ssic_code || '',
       consecutive_point: letterToLoad.consecutive_point,
       revision_suffix: letterToLoad.revision_suffix,
@@ -1926,7 +1926,7 @@ useEffect(() => {
       originatorCode: letterToLoad.originatorCode || '',
       date: letterToLoad.date || '',
       from: letterToLoad.from || '',
-      to: 'Distribution List', // âœ… ALWAYS: Set to default value
+      to: 'Distribution List', // ✅… ALWAYS: Set to default value
       subj: letterToLoad.subj || '',
       sig: letterToLoad.sig || '',
       delegationText: letterToLoad.delegationText || [],
@@ -2593,7 +2593,7 @@ const generateBasicLetter = async () => {
 
     content.push(new Paragraph({ text: "" }));
 
-    // âœ… UPDATED: From/To section with proper formatting
+    // ✅… UPDATED: From/To section with proper formatting
     // a. "From:" Line - Use the title of the principal official
     content.push(new Paragraph({
       children: [new TextRun({
@@ -2616,7 +2616,7 @@ const generateBasicLetter = async () => {
 
     content.push(new Paragraph({ text: "" }));
 
-    // âœ… UPDATED: Multi-line subject line with proper formatting
+    // ✅… UPDATED: Multi-line subject line with proper formatting
     // c. "Subj:" Line - All capital letters, topical statement, acronyms spelled out
     const subjectText = formData.subj || "MARINE CORPS DIRECTIVES MANAGEMENT PROGRAM (MCDMP)";
     const subjectParagraphs = createFormattedSubjectLine(subjectText);
@@ -3948,7 +3948,7 @@ const clearParagraphContent = (paragraphId: number) => {
               Required Information
             </div>
 
-            {/* âœ… NEW: Designation Line Input - Added at the top */}
+            {/* ✅… NEW: Designation Line Input - Added at the top */}
             <div className="input-group">
               <span className="input-group-text">
                 <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
@@ -4018,7 +4018,7 @@ const clearParagraphContent = (paragraphId: number) => {
               </div>
             )}
 
-            {/* âœ… REMOVED: To input field and its validation */}
+            {/* ✅… REMOVED: To input field and its validation */}
             
             <div className="input-group">
               <span className="input-group-text">
@@ -4518,11 +4518,11 @@ const clearParagraphContent = (paragraphId: number) => {
                 Voice Input Available
               </div>
               <div style={{ color: '#1565c0', fontSize: '0.9rem', lineHeight: '1.4' }}>
-                â€¢ Click <strong>Voice Input</strong> on any paragraph to start dictating<br/>
-                â€¢ Speak clearly and pause between sentences for best results<br/>
-                â€¢ Click <strong>Stop Recording</strong> or the button again to finish<br/>
-                â€¢ Works best in Chrome, Edge, and Safari browsers<br/>
-                â€¢ Requires microphone permission - allow when prompted
+                • Click <strong>Voice Input</strong> on any paragraph to start dictating<br/>
+                • Speak clearly and pause between sentences for best results<br/>
+                • Click <strong>Stop Recording</strong> or the button again to finish<br/>
+                • Works best in Chrome, Edge, and Safari browsers<br/>
+                • Requires microphone permission - allow when prompted
               </div>
             </div>
             
@@ -4544,7 +4544,7 @@ const clearParagraphContent = (paragraphId: number) => {
                       </div>
                       {numberingErrors.map((error, index) => (
                         <div key={index} style={{ color: '#856404', fontSize: '0.9rem' }}>
-                          â€¢ {error}
+                          • {error}
                         </div>
                       ))}
                       <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#6c757d' }}>
@@ -4585,7 +4585,7 @@ const clearParagraphContent = (paragraphId: number) => {
                             onClick={() => moveParagraphUp(paragraph.id)}
                             title="Move Up"
                           >
-                            â†‘
+                            →
                           </button>
                         )}
                         <button 
@@ -4863,9 +4863,9 @@ const clearParagraphContent = (paragraphId: number) => {
                     </strong>
                     <br />
                     <div style={{ marginTop: '4px', color: '#17a2b8' }}>
-                      â€¢ <strong>By direction:</strong> For routine correspondence when specifically authorized<br />
-                      â€¢ <strong>Acting:</strong> When temporarily succeeding to command or appointed to replace an official<br />
-                      â€¢ <strong>Deputy Acting:</strong> For deputy positions acting in absence<br />
+                      • <strong>By direction:</strong> For routine correspondence when specifically authorized<br />
+                      • <strong>Acting:</strong> When temporarily succeeding to command or appointed to replace an official<br />
+                      • <strong>Deputy Acting:</strong> For deputy positions acting in absence<br />
                     </div>
                   </div>
                 </div>
@@ -4940,7 +4940,7 @@ const clearParagraphContent = (paragraphId: number) => {
           }}>
             <p>
               <i className="fas fa-shield-alt" style={{ marginRight: '4px' }}></i>
-              DoD Seal automatically included â€¢ Format compliant with SECNAV M-5216.5
+              DoD Seal automatically included • Format compliant with SECNAV M-5216.5
             </p>
             <p style={{ marginTop: '8px' }}>
               <a href="https://linktr.ee/semperadmin" target="_blank" rel="noopener noreferrer" style={{ color: '#b8860b', textDecoration: 'none' }}>
