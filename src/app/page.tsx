@@ -2445,7 +2445,7 @@ const formatDistributionStatement = (distributionStatement: FormData['distributi
 const generateBasicLetter = async () => {
   try {
     // Use local base64 DoD seal
-    const sealBufferValue = await getDoDSealBuffer();
+    const sealImageRun = await createDoDSeal();
 
     const content = [];
     
@@ -2793,11 +2793,9 @@ const generateBasicLetter = async () => {
       first: new Header({
         children: [
           // DOD Seal (if buffer available)
-          ...(sealBufferValue ? [
-            new Paragraph({
-              children: [createDoDSeal(sealBufferValue)]
-            })
-          ] : [])
+        new Paragraph({
+          children: [sealImageRun]
+        })
         ]
       }),
       
