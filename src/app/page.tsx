@@ -3556,7 +3556,7 @@ const clearParagraphContent = (paragraphId: number) => {
             opacity: 0.8,
             fontStyle: 'italic'
           }}>
-            â†’ Permanent Policy
+            → Permanent Policy
           </div>
         </div>
       </div>
@@ -3639,7 +3639,7 @@ const clearParagraphContent = (paragraphId: number) => {
             opacity: 0.8,
             fontStyle: 'italic'
           }}>
-            â†’ Temporary Guidance
+            → Temporary Guidance
           </div>
         </div>
       </div>
@@ -4585,7 +4585,7 @@ const clearParagraphContent = (paragraphId: number) => {
                             onClick={() => moveParagraphUp(paragraph.id)}
                             title="Move Up"
                           >
-                            →
+                            ↑
                           </button>
                         )}
                         <button 
@@ -4595,7 +4595,7 @@ const clearParagraphContent = (paragraphId: number) => {
                           disabled={index === paragraphs.length - 1}
                           title="Move Down"
                         >
-                          â†“
+                          ↓
                         </button>
                       </div>
                     </div>
