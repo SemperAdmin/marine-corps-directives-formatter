@@ -1960,5 +1960,3 @@ export default function NavalLetterGenerator() {
     </div>
   );
 }
-
-      return
