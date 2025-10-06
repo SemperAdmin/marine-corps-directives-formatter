@@ -8,7 +8,6 @@ const nextConfig: NextConfig = {
   assetPrefix: isProd ? `/${repoName}` : '',
   output: 'export',
   trailingSlash: true,
-  distDir: 'out',
   typescript: {
     ignoreBuildErrors: true,
   },
