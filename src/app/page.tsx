@@ -3468,7 +3468,7 @@ const clearParagraphContent = (paragraphId: number) => {
         }
       </h1>
       <p className="text-center text-gray-600 text-sm mb-1">by Semper Admin</p>
-      <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20250821</p>
+      <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20251005</p>
     </div>
 
 {/* Document Type Selector */}
@@ -3536,8 +3536,7 @@ const clearParagraphContent = (paragraphId: number) => {
             alignItems: 'center',
             gap: '10px'
           }}>
-            <i className="fas fa-gavel"></i>
-            Orders
+           📋 Orders
             {formData.documentType === 'mco' && (
               <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
             )}
@@ -3620,8 +3619,7 @@ const clearParagraphContent = (paragraphId: number) => {
             alignItems: 'center',
             gap: '10px'
           }}>
-            <i className="fas fa-bullhorn"></i>
-            Bulletins
+            📢 Bulletins
             {formData.documentType === 'mcbul' && (
               <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
             )}
