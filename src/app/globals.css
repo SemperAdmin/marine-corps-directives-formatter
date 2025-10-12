@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+    --primary: 348 83% 47%;        /* Marine Scarlet */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 11%;         /* Charcoal Gray */
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 66%;             /* Support Gray */
+    --muted-foreground: 0 0% 18%;
+    --accent: 51 100% 50%;         /* USMC Gold */
+    --accent-foreground: 0 0% 0%;
+    --destructive: 348 83% 47%;    /* Crimson */
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 66%;
+    --input: 0 0% 18%;
+    --ring: 348 83% 47%;
+    --chart-1: 348 83% 47%;        /* Marine Scarlet */
+    --chart-2: 140 34% 41%;        /* Marine Green */
+    --chart-3: 207 44% 49%;        /* Steel Blue */
+    --chart-4: 51 100% 50%;        /* USMC Gold */
+    --chart-5: 0 0% 18%;           /* Charcoal */
+    --radius: 0.5rem;
+  }
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --card: 0 0% 18%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 18%;
+    --popover-foreground: 0 0% 100%;
+    --primary: 348 83% 47%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 18%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 0 0% 66%;
+    --muted-foreground: 0 0% 100%;
+    --accent: 51 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --destructive: 348 83% 47%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 348 83% 47%;
+    --chart-1: 348 83% 47%;
+    --chart-2: 140 34% 41%;
+    --chart-3: 207 44% 49%;
+    --chart-4: 51 100% 50%;
+    --chart-5: 0 0% 18%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+body {
+  @apply bg-background text-foreground;
+  margin: 0; /* Reset default 8px */
+  background: linear-gradient(135deg, #000000 0%, #1C1C1C 100%); /* Match your gradient */
+}
+}
