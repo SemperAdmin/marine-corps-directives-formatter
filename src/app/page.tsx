@@ -1,4 +1,4 @@
-﻿
+﻿﻿
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
@@ -2067,12 +2067,27 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
     }));
   };
 
+
+  /**
+   * Converts a number to Excel-style letters (1=a, 2=b... 26=z, 27=aa, 28=ab)
+   */
+  const numberToLetter = (num: number): string => {
+    let result = '';
+    while (num > 0) {
+      const remainder = (num - 1) % 26;
+      result = String.fromCharCode(97 + remainder) + result;
+      num = Math.floor((num - 1) / 26);
+    }
+    return result;
+  };
   /**
    * Generates the correct citation string (e.g., "1.", "a.", "(1)") for a given paragraph for UI display.
    */
   const getUiCitation = (paragraph: ParagraphData, index: number, allParagraphs: ParagraphData[]): string => {
     const { level } = paragraph;
 
+    // Helper to get the citation for a single level
+    // Helper to get the citation for a single level
     // Helper to get the citation for a single level
     const getCitationPart = (targetLevel: number, parentIndex: number) => {
       let listStartIndex = 0;
@@ -2094,13 +2109,13 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
 
       switch (targetLevel) {
           case 1: return `${count}.`;
-          case 2: return `${String.fromCharCode(96 + count)}`;
+          case 2: return `${numberToLetter(count)}`; // ← CHANGED: Now supports aa, ab, etc.
           case 3: return `(${count})`;
-          case 4: return `(${String.fromCharCode(96 + count)})`;
+          case 4: return `(${numberToLetter(count)})`; // ← CHANGED: Now supports (aa), (ab), etc.
           case 5: return `${count}.`;
-          case 6: return `${String.fromCharCode(96 + count)}.`;
+          case 6: return `${numberToLetter(count)}.`; // ← CHANGED: Now supports aa., ab., etc.
           case 7: return `(${count})`;
-          case 8: return `(${String.fromCharCode(96 + count)})`;
+          case 8: return `(${numberToLetter(count)})`; // ← CHANGED: Now supports (aa), (ab), etc.
           default: return '';
       }
     };

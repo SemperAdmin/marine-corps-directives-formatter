@@ -27,6 +27,18 @@ const NAVAL_TAB_STOPS = {
     8: { citation: 2520, text: 2880 },
 };
 
+/**
+ * Converts a number to Excel-style letters (1=a, 2=b... 26=z, 27=aa, 28=ab)
+ */
+function numberToLetter(num: number): string {
+  let result = '';
+  while (num > 0) {
+    const remainder = (num - 1) % 26;
+    result = String.fromCharCode(97 + remainder) + result;
+    num = Math.floor((num - 1) / 26);
+  }
+  return result;
+}
 
 /**
  * Generates the correct citation string (e.g., "1.", "a.", "(1)") for a given paragraph.
@@ -51,7 +63,7 @@ function generateCitation(
         break;
       case 2: 
         indent = '    ';          // 4 spaces before
-        citation = `${String.fromCharCode(96 + count)}.`;
+        citation = `${numberToLetter(count)}.`;
         spacing = '  ';           // 2 spaces after period
         break;
       case 3: 
@@ -61,7 +73,7 @@ function generateCitation(
         break;
       case 4: 
         indent = '            ';  // 12 spaces before
-        citation = `(${String.fromCharCode(96 + count)})`;
+        citation = `(${numberToLetter(count)})`;
         spacing = ' ';            // 1 space after parenthesis
         break;
       case 5: 
@@ -71,7 +83,7 @@ function generateCitation(
         break;
       case 6: 
         indent = '                    '; // 20 spaces before
-        citation = `${String.fromCharCode(96 + count)}.`;
+        citation = `${numberToLetter(count)}.`;
         spacing = '  ';           // 2 spaces after period
         break;
       case 7: 
@@ -81,7 +93,7 @@ function generateCitation(
         break;
       case 8: 
         indent = '                            '; // 28 spaces before
-        citation = `(${String.fromCharCode(96 + count)})`;
+        citation = `(${numberToLetter(count)})`;
         spacing = ' ';            // 1 space after parenthesis
         break;
       default: 
@@ -92,15 +104,16 @@ function generateCitation(
   }
 
   // Original tab-based formatting for Times New Roman
+  // Original tab-based formatting for Times New Roman
   switch (level) {
     case 1: citation = `${count}.`; break;
-    case 2: citation = `${String.fromCharCode(96 + count)}.`; break;
+    case 2: citation = `${numberToLetter(count)}.`; break;
     case 3: citation = `(${count})`; break;
-    case 4: citation = `(${String.fromCharCode(96 + count)})`; break;
+    case 4: citation = `(${numberToLetter(count)})`; break;
     case 5: citation = `${count}.`; break;
-    case 6: citation = `${String.fromCharCode(96 + count)}.`; break;
+    case 6: citation = `${numberToLetter(count)}.`; break;
     case 7: citation = `(${count})`; break;
-    case 8: citation = `(${String.fromCharCode(96 + count)})`; break;
+    case 8: citation = `(${numberToLetter(count)})`; break;
     default: citation = '';
   }
 
