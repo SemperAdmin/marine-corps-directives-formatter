@@ -3636,292 +3636,250 @@ const clearParagraphContent = (paragraphId: number) => {
 
       <div className="marine-gradient-bg">
         <div className="container mx-auto px-4 py-8">
-    {/* Header Section */}
+    {/* Header Title */}
     <div className="form-section" style={{ textAlign: 'center', marginBottom: '30px' }}>
       <h1 className="text-4xl font-bold text-center mb-2 text-black font-display tracking-wide">
-        {{ 'mco': 'Marine Corps Orders Formatter', 'mcbul': 'Marine Corps Bulletins Formatter' }[formData.documentType] || 'Marine Corps Directives Formatter'}
+        Marine Corps Directives Formatter
       </h1>
       <p className="text-center text-gray-600 text-sm mb-1">by Semper Admin</p>
-      <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20251005</p>
+      <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20251013</p>
     </div>
 
-    <button
-      type="button"
-      className={`btn ${
-        formData.documentType === 'mco'
-          ? 'btn-danger'
-          : 'btn-outline-secondary'
-      }`}
-      onClick={() => setFormData(prev => ({ ...prev, documentType: 'mco' }))}
-      style={{
-        padding: '20px',
-        height: 'auto',
-        textAlign: 'left',
-        border: formData.documentType === 'mco' ? '3px solid #dc3545' : '2px solid #dee2e6',
-        borderRadius: '12px',
-        transition: 'all 0.3s ease',
-        position: 'relative',
-        background: formData.documentType === 'mco' 
-          ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)' 
-          : 'white',
-        color: formData.documentType === 'mco' ? 'white' : '#495057',
-        boxShadow: formData.documentType === 'mco' 
-          ? '0 8px 25px rgba(220, 53, 69, 0.3)' 
-          : '0 2px 10px rgba(0, 0, 0, 0.1)'
-      }}
-      onMouseEnter={(e) => {
-        if (formData.documentType !== 'mco') {
-          (e.currentTarget as HTMLButtonElement).style.borderColor = '#dc3545';
-          (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
-          (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 15px rgba(220, 53, 69, 0.2)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (formData.documentType !== 'mco') {
-          (e.currentTarget as HTMLButtonElement).style.borderColor = '#dee2e6';
-          (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
-          (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
-        }
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-        <div style={{
-          fontSize: '2.5rem',
-          opacity: 0.9,
-          minWidth: '60px'
-        }}>
-          📋
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{
-            fontSize: '1.25rem',
-            fontWeight: 'bold',
-            marginBottom: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-           Orders
-            {formData.documentType === 'mco' && (
-              <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-            )}
-          </div>
-          <div style={{
-            fontSize: '0.95rem',
-            opacity: 0.9,
-            marginBottom: '10px',
-            lineHeight: '1.4',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            Marine Corps Order - Permanent policy directives with long-term applicability.
-          </div>
-          <div style={{
-            fontSize: '0.85rem',
-            opacity: 0.8,
-            fontStyle: 'italic'
-          }}>
-            → Permanent Policy
-          </div>
-        </div>
+    {/* Document Type Selection - Side by Side */}
+    <div className="form-section">
+      <div className="section-legend">
+        <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
+        Choose Document Type
       </div>
-    </button>
 
-    {/* MCBul Card */}
-    <button
-      type="button"
-      className={`btn ${
-        formData.documentType === 'mcbul' 
-          ? 'btn-warning' 
-          : 'btn-outline-secondary'
-      }`}
-      onClick={() => setFormData(prev => ({ ...prev, documentType: 'mcbul' }))}
-      style={{
-        padding: '20px',
-        height: 'auto',
-        textAlign: 'left',
-        border: formData.documentType === 'mcbul' ? '3px solid #ffc107' : '2px solid #dee2e6',
-        borderRadius: '12px',
-        transition: 'all 0.3s ease',
-        position: 'relative',
-        background: formData.documentType === 'mcbul' 
-          ? 'linear-gradient(135deg, #ffc107 0%, #e0a800 100%)' 
-          : 'white',
-        color: formData.documentType === 'mcbul' ? 'white' : '#495057',
-        boxShadow: formData.documentType === 'mcbul' 
-          ? '0 8px 25px rgba(255, 193, 7, 0.3)' 
-          : '0 2px 10px rgba(0, 0, 0, 0.1)'
-      }}
-      onMouseEnter={(e) => {
-        if (formData.documentType !== 'mcbul') {
-          e.currentTarget.style.borderColor = '#ffc107';
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = '0 4px 15px rgba(255, 193, 7, 0.2)';
-        }
-      }}
-      onMouseLeave={(e) => {
-        if (formData.documentType !== 'mcbul') {
-          e.currentTarget.style.borderColor = '#dee2e6';
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
-        }
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-        <div style={{
-          fontSize: '2.5rem',
-          opacity: 0.9,
-          minWidth: '60px'
-        }}>
-          📢
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{
-            fontSize: '1.25rem',
-            fontWeight: 'bold',
-            marginBottom: '8px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px'
-          }}>
-            Bulletins
-            {formData.documentType === 'mcbul' && (
-              <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-            )}
-          </div>
-          <div style={{
-            fontSize: '0.95rem',
-            opacity: 0.9,
-            marginBottom: '10px',
-            lineHeight: '1.4',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis'
-          }}>
-            Marine Corps Bulletin - Temporary guidance with automatic cancellation dates.
-          </div>
-          <div style={{
-            fontSize: '0.85rem',
-            opacity: 0.8,
-            fontStyle: 'italic'
-          }}>
-            → Temporary Guidance
-          </div>
-        </div>
-      </div>  {/* End of Document Type Selector */}
-
-
-{/* Next section continues here */}
-    </button>
-    {/* Letterhead Type Selector */}
-          <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #dee2e6' }}>
-            <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-              <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
-              Letterhead Format
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-
-              {/* United States Marine Corps */}
-              <button
-                type="button"
-                className={`btn ${formData.letterheadType === 'marine-corps' ? 'btn-danger' : 'btn-outline-secondary'}`}
-                onClick={() => setFormData(prev => ({ ...prev, letterheadType: 'marine-corps' }))}
-                style={{
-                  padding: '15px',
-                  textAlign: 'left',
-                  border: formData.letterheadType === 'marine-corps' ? '3px solid #C41E3A' : '2px solid #dee2e6',
-                  borderRadius: '10px',
-                  background: formData.letterheadType === 'marine-corps' ? 'linear-gradient(135deg, #C41E3A 0%, #8B0000 100%)' : 'white',
-                  color: formData.letterheadType === 'marine-corps' ? 'white' : '#495057'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                  United States Marine Corps
-                </div>
-                <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                  3-line unit format • Black text
-                </div>
-              </button>
-                      
-              {/* Department of the Navy */}
-              <button
-                type="button"
-                className={`btn ${formData.letterheadType === 'navy' ? 'btn-primary' : 'btn-outline-secondary'}`}
-                onClick={() => setFormData(prev => ({ ...prev, letterheadType: 'navy' }))}
-                style={{
-                  padding: '15px',
-                  textAlign: 'left',
-                  border: formData.letterheadType === 'navy' ? '3px solid #002D72' : '2px solid #dee2e6',
-                  borderRadius: '10px',
-                  background: formData.letterheadType === 'navy' ? 'linear-gradient(135deg, #002D72 0%, #0047AB 100%)' : 'white',
-                  color: formData.letterheadType === 'navy' ? 'white' : '#495057'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                  Department of the Navy
-                </div>
-                <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                  4-line HQMC format • Blue text
-                </div>
-              </button>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+        {/* Orders Button - LEFT */}
+        <button
+          type="button"
+          className={`btn ${
+            formData.documentType === 'mco'
+              ? 'btn-danger'
+              : 'btn-outline-secondary'
+          }`}
+          onClick={() => setFormData(prev => ({ ...prev, documentType: 'mco' }))}
+          style={{
+            padding: '20px',
+            height: 'auto',
+            textAlign: 'left',
+            border: formData.documentType === 'mco' ? '3px solid #dc3545' : '2px solid #dee2e6',
+            borderRadius: '12px',
+            transition: 'all 0.3s ease',
+            background: formData.documentType === 'mco' 
+              ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)' 
+              : 'white',
+            color: formData.documentType === 'mco' ? 'white' : '#495057',
+            boxShadow: formData.documentType === 'mco' 
+              ? '0 8px 25px rgba(220, 53, 69, 0.3)' 
+              : '0 2px 10px rgba(0, 0, 0, 0.1)',
+            width: '100%'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+            <div style={{ fontSize: '2.5rem', opacity: 0.9, minWidth: '60px' }}>📋</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                Orders
+                {formData.documentType === 'mco' && (
+                  <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
+                )}
+              </div>
+              <div style={{ fontSize: '0.95rem', opacity: 0.9, marginBottom: '10px', lineHeight: '1.4' }}>
+                Marine Corps Order - Permanent policy directives with long-term applicability.
+              </div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.8, fontStyle: 'italic' }}>
+                → Permanent Policy
+              </div>
             </div>
           </div>
-          {/* Body Font Selector */}
-          <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #dee2e6' }}>
-            <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-              <i className="fas fa-font" style={{ marginRight: '8px' }}></i>
-              Body Font
-            </label>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-              
-              {/* Times New Roman */}
-              <button
-                type="button"
-                className={`btn ${formData.bodyFont === 'times' ? 'btn-success' : 'btn-outline-secondary'}`}
-                onClick={() => setFormData(prev => ({ ...prev, bodyFont: 'times' }))}
-                style={{
-                  padding: '15px',
-                  textAlign: 'left',
-                  border: formData.bodyFont === 'times' ? '3px solid #28a745' : '2px solid #dee2e6',
-                  borderRadius: '10px',
-                  background: formData.bodyFont === 'times' ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'white',
-                  color: formData.bodyFont === 'times' ? 'white' : '#495057'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', marginBottom: '5px', fontFamily: 'Times New Roman, serif' }}>
-                  Times New Roman
-                </div>
-                <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                  Standard serif font • Traditional
-                </div>
-              </button>
+        </button>
 
-              {/* Courier New */}
-              <button
-                type="button"
-                className={`btn ${formData.bodyFont === 'courier' ? 'btn-success' : 'btn-outline-secondary'}`}
-                onClick={() => setFormData(prev => ({ ...prev, bodyFont: 'courier' }))}
-                style={{
-                  padding: '15px',
-                  textAlign: 'left',
-                  border: formData.bodyFont === 'courier' ? '3px solid #28a745' : '2px solid #dee2e6',
-                  borderRadius: '10px',
-                  background: formData.bodyFont === 'courier' ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'white',
-                  color: formData.bodyFont === 'courier' ? 'white' : '#495057'
-                }}
-              >
-                <div style={{ fontWeight: 'bold', marginBottom: '5px', fontFamily: 'Courier New, monospace' }}>
-                  Courier New
-                </div>
-                <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                  Monospaced font • Typewriter style
-                </div>
-              </button>
-              
+        {/* Bulletins Button - RIGHT */}
+        <button
+          type="button"
+          className={`btn ${
+            formData.documentType === 'mcbul' 
+              ? 'btn-warning' 
+              : 'btn-outline-secondary'
+          }`}
+          onClick={() => setFormData(prev => ({ ...prev, documentType: 'mcbul' }))}
+          style={{
+            padding: '20px',
+            height: 'auto',
+            textAlign: 'left',
+            border: formData.documentType === 'mcbul' ? '3px solid #ffc107' : '2px solid #dee2e6',
+            borderRadius: '12px',
+            transition: 'all 0.3s ease',
+            background: formData.documentType === 'mcbul' 
+              ? 'linear-gradient(135deg, #ffc107 0%, #e0a800 100%)' 
+              : 'white',
+            color: formData.documentType === 'mcbul' ? 'white' : '#495057',
+            boxShadow: formData.documentType === 'mcbul' 
+              ? '0 8px 25px rgba(255, 193, 7, 0.3)' 
+              : '0 2px 10px rgba(0, 0, 0, 0.1)',
+            width: '100%'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+            <div style={{ fontSize: '2.5rem', opacity: 0.9, minWidth: '60px' }}>📢</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                Bulletins
+                {formData.documentType === 'mcbul' && (
+                  <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
+                )}
+              </div>
+              <div style={{ fontSize: '0.95rem', opacity: 0.9, marginBottom: '10px', lineHeight: '1.4' }}>
+                Marine Corps Bulletin - Temporary guidance with automatic cancellation dates.
+              </div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.8, fontStyle: 'italic' }}>
+                → Temporary Guidance
+              </div>
             </div>
           </div>
-        </div>
+        </button>
       </div>
+{/* Letterhead Format & Body Font - 2x2 Grid */}
+    <div className="form-section">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
+        
+        {/* LEFT COLUMN - Letterhead Format */}
+        <div>
+          <div style={{ 
+            fontSize: '1.1rem', 
+            fontWeight: 'bold', 
+            marginBottom: '12px',
+            color: '#374151',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
+            Letterhead Format
+          </div>
           
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* United States Marine Corps */}
+            <button
+              type="button"
+              className={`btn ${formData.letterheadType === 'marine-corps' ? 'btn-danger' : 'btn-outline-secondary'}`}
+              onClick={() => setFormData(prev => ({ ...prev, letterheadType: 'marine-corps' }))}
+              style={{
+                padding: '15px',
+                textAlign: 'left',
+                border: formData.letterheadType === 'marine-corps' ? '3px solid #C41E3A' : '2px solid #dee2e6',
+                borderRadius: '10px',
+                background: formData.letterheadType === 'marine-corps' ? 'linear-gradient(135deg, #C41E3A 0%, #8B0000 100%)' : 'white',
+                color: formData.letterheadType === 'marine-corps' ? 'white' : '#495057',
+                width: '100%'
+              }}
+            >
+              <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+                United States Marine Corps
+              </div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                3-line unit format • Black text
+              </div>
+            </button>
+                    
+            {/* Department of the Navy */}
+            <button
+              type="button"
+              className={`btn ${formData.letterheadType === 'navy' ? 'btn-primary' : 'btn-outline-secondary'}`}
+              onClick={() => setFormData(prev => ({ ...prev, letterheadType: 'navy' }))}
+              style={{
+                padding: '15px',
+                textAlign: 'left',
+                border: formData.letterheadType === 'navy' ? '3px solid #002D72' : '2px solid #dee2e6',
+                borderRadius: '10px',
+                background: formData.letterheadType === 'navy' ? 'linear-gradient(135deg, #002D72 0%, #0047AB 100%)' : 'white',
+                color: formData.letterheadType === 'navy' ? 'white' : '#495057',
+                width: '100%'
+              }}
+            >
+              <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
+                Department of the Navy
+              </div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                4-line HQMC format • Blue text
+              </div>
+            </button>
+          </div>
+        </div>
+
+        {/* RIGHT COLUMN - Body Font */}
+        <div>
+          <div style={{ 
+            fontSize: '1.1rem', 
+            fontWeight: 'bold', 
+            marginBottom: '12px',
+            color: '#374151',
+            display: 'flex',
+            alignItems: 'center'
+          }}>
+            <i className="fas fa-font" style={{ marginRight: '8px' }}></i>
+            Body Font
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {/* Times New Roman */}
+            <button
+              type="button"
+              className={`btn ${formData.bodyFont === 'times' ? 'btn-success' : 'btn-outline-secondary'}`}
+              onClick={() => setFormData(prev => ({ ...prev, bodyFont: 'times' }))}
+              style={{
+                padding: '15px',
+                textAlign: 'left',
+                border: formData.bodyFont === 'times' ? '3px solid #28a745' : '2px solid #dee2e6',
+                borderRadius: '10px',
+                background: formData.bodyFont === 'times' ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'white',
+                color: formData.bodyFont === 'times' ? 'white' : '#495057',
+                width: '100%'
+              }}
+            >
+              <div style={{ fontWeight: 'bold', marginBottom: '5px', fontFamily: 'Times New Roman, serif' }}>
+                Times New Roman
+              </div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                Standard serif font • Traditional
+              </div>
+            </button>
+
+            {/* Courier New */}
+            <button
+              type="button"
+              className={`btn ${formData.bodyFont === 'courier' ? 'btn-success' : 'btn-outline-secondary'}`}
+              onClick={() => setFormData(prev => ({ ...prev, bodyFont: 'courier' }))}
+              style={{
+                padding: '15px',
+                textAlign: 'left',
+                border: formData.bodyFont === 'courier' ? '3px solid #28a745' : '2px solid #dee2e6',
+                borderRadius: '10px',
+                background: formData.bodyFont === 'courier' ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'white',
+                color: formData.bodyFont === 'courier' ? 'white' : '#495057',
+                width: '100%'
+              }}
+            >
+              <div style={{ fontWeight: 'bold', marginBottom: '5px', fontFamily: 'Courier New, monospace' }}>
+                Courier New
+              </div>
+              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
+                Monospaced font • Typewriter style
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+    
+
+
+    {/* Letterhead and Font Card */}
+
           {/* MCBul-Specific Fields */}
           {(formData.documentType === 'mcbul') && (
              <div className="form-section">
@@ -5043,5 +5001,7 @@ const clearParagraphContent = (paragraphId: number) => {
             </p>
           </div>
         </div>
+      </div>
+    </div>
   );
 }
