@@ -1120,9 +1120,11 @@ interface ReferencesProps {
 }
 
 const ReferencesSection = ({ references, setReferences, formData, setFormData }: ReferencesProps) => {
-    const [showRef, setShowRef] = useState(false);
+    // Auto-show if references exist
+    const [showRef, setShowRef] = useState(references.some(r => r.trim() !== ''));
 
     useEffect(() => {
+        // Keep in sync with references
         setShowRef(references.some(r => r.trim() !== ''));
     }, [references]);
 
@@ -1289,7 +1291,8 @@ interface EnclosuresProps {
 }
 
 const EnclosuresSection = ({ enclosures, setEnclosures, formData, setFormData, getEnclosureNumber, generateEnclosureOptions }: EnclosuresProps) => {
-    const [showEncl, setShowEncl] = useState(false);
+    // Auto-show if enclosures exist
+    const [showEncl, setShowEncl] = useState(enclosures.some(e => e.trim() !== ''));
 
     useEffect(() => {
         setShowEncl(enclosures.some(e => e.trim() !== ''));
@@ -1465,13 +1468,30 @@ export default function MarineCorpsDirectivesFormatter() {
   const [showRef, setShowRef] = useState(false);
   const [showEncl, setShowEncl] = useState(false);
   const [showDelegation, setShowDelegation] = useState(false);
-  
+
   const [distribution, setDistribution] = useState<DistributionEntry[]>([]);
   const [showDistribution, setShowDistribution] = useState(false);
-  
+
   const [references, setReferences] = useState<string[]>(['']);
   const [enclosures, setEnclosures] = useState<string[]>(['']);
+
+  // ✅ CORRECT - Now references and enclosures exist!
+  useEffect(() => {
+  // Check if references have content
+  if (references && references.some(r => r.trim() !== '')) {
+    setShowRef(true);
+  } else {
+    setShowRef(false);
+  }
   
+  // Check if enclosures have content
+  if (enclosures && enclosures.some(e => e.trim() !== '')) {
+    setShowEncl(true);
+  } else {
+    setShowEncl(false);
+  }
+}, [references, enclosures]); // ✅ Re-run when references or enclosures change
+
   const [paragraphs, setParagraphs] = useState<ParagraphData[]>([
   {
     id: 1,
