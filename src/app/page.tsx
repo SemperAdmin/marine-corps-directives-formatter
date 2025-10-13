@@ -1472,6 +1472,11 @@ export default function MarineCorpsDirectivesFormatter() {
   const [distribution, setDistribution] = useState<DistributionEntry[]>([]);
   const [showDistribution, setShowDistribution] = useState(false);
 
+  // ADD THESE NEW DISTRIBUTION STATES:
+  const [distributionType, setDistributionType] = useState<'pcn-only' | 'pcn-with-copy' | 'statement' | 'none'>('statement');
+  const [pcn, setPcn] = useState('');
+  const [copyToList, setCopyToList] = useState<Array<{ code: string; qty: number }>>([]);
+
   const [references, setReferences] = useState<string[]>(['']);
   const [enclosures, setEnclosures] = useState<string[]>(['']);
 
@@ -1491,6 +1496,23 @@ export default function MarineCorpsDirectivesFormatter() {
     setShowEncl(false);
   }
 }, [references, enclosures]); // ✅ Re-run when references or enclosures change
+
+// Admin & Logistics optional subsections (MCO only)
+const [adminSubsections, setAdminSubsections] = useState<{
+  recordsManagement: { show: boolean; content: string; order: number };
+  privacyAct: { show: boolean; content: string; order: number };
+}>({
+  recordsManagement: { 
+    show: false, 
+    content: "Records created as a result of this Order shall be managed in accordance with SECNAV M-5210.1, Department of the Navy Records Management Program, and disposed of IAW SSIC 5210.",
+    order: 0
+  },
+  privacyAct: { 
+    show: false, 
+    content: "Any misuse or unauthorized disclosure of Personally Identifiable Information (PII) may result in criminal and/or civil penalties (5 U.S.C. § 552a).",
+    order: 0
+  }
+});
 
   const [paragraphs, setParagraphs] = useState<ParagraphData[]>([
   {
@@ -1881,7 +1903,101 @@ const validateDirectiveReference = (formData: FormData): string[] => {
     setter((prev: string[]) => prev.map((item: string, i: number) => i === index ? value : item));
   };
 
+// Helper to get next order number for subsections
+  const getNextSubsectionOrder = () => {
+    const orders = [
+      adminSubsections.recordsManagement.show ? adminSubsections.recordsManagement.order : 0,
+      adminSubsections.privacyAct.show ? adminSubsections.privacyAct.order : 0
+    ].filter(o => o > 0);
+    
+    return orders.length > 0 ? Math.max(...orders) + 1 : 1;
+  };
 
+  // Add Records Management subsection
+  const addRecordsManagement = () => {
+    setAdminSubsections(prev => ({
+      ...prev,
+      recordsManagement: {
+        ...prev.recordsManagement,
+        show: true,
+        order: getNextSubsectionOrder()
+      }
+    }));
+  };
+
+  // Add Privacy Act subsection
+  const addPrivacyAct = () => {
+    setAdminSubsections(prev => ({
+      ...prev,
+      privacyAct: {
+        ...prev.privacyAct,
+        show: true,
+        order: getNextSubsectionOrder()
+      }
+    }));
+  };
+
+  // Remove Records Management subsection
+  const removeRecordsManagement = () => {
+    setAdminSubsections(prev => ({
+      ...prev,
+      recordsManagement: {
+        ...prev.recordsManagement,
+        show: false,
+        order: 0
+      }
+    }));
+  };
+
+  // Remove Privacy Act subsection
+  const removePrivacyAct = () => {
+    setAdminSubsections(prev => ({
+      ...prev,
+      privacyAct: {
+        ...prev.privacyAct,
+        show: false,
+        order: 0
+      }
+    }));
+  };
+
+  // Get subsection letter (a, b) based on order
+  const getSubsectionLetter = (type: 'recordsManagement' | 'privacyAct'): string => {
+    const subsection = adminSubsections[type];
+    if (!subsection.show) return '';
+    
+    const activeSubsections = [
+      adminSubsections.recordsManagement.show ? { type: 'recordsManagement', order: adminSubsections.recordsManagement.order } : null,
+      adminSubsections.privacyAct.show ? { type: 'privacyAct', order: adminSubsections.privacyAct.order } : null
+    ].filter(s => s !== null).sort((a, b) => a!.order - b!.order);
+    
+    const index = activeSubsections.findIndex(s => s!.type === type);
+    return String.fromCharCode(97 + index); // a, b, c...
+  };
+
+  // Copy To list helpers
+  const addCopyToEntry = () => {
+    setCopyToList([...copyToList, { code: '', qty: 1 }]);
+  };
+
+  const removeCopyToEntry = (index: number) => {
+    setCopyToList(copyToList.filter((_, i) => i !== index));
+  };
+
+  const updateCopyToCode = (index: number, code: string) => {
+    // Only allow 7-digit numeric codes
+    if (code === '' || (/^\d{0,7}$/.test(code))) {
+      setCopyToList(copyToList.map((item, i) => i === index ? { ...item, code } : item));
+    }
+  };
+
+  const updateCopyToQty = (index: number, qty: number) => {
+    // Only allow quantities 1-99
+    if (qty >= 1 && qty <= 99) {
+      setCopyToList(copyToList.map((item, i) => i === index ? { ...item, qty } : item));
+    }
+  };
+  
   const addParagraph = (type: 'main' | 'sub' | 'same' | 'up', afterId: number) => {
     const currentParagraph = paragraphs.find(p => p.id === afterId);
     if (!currentParagraph) return;
@@ -4344,8 +4460,8 @@ const clearParagraphContent = (paragraphId: number) => {
               <i className="fas fa-plus-circle" style={{ marginRight: '8px' }}></i>
               Optional Items
             </div>
+        
             
-
             
             <Card style={{ marginBottom: '1.5rem' }}>
               <CardHeader>
@@ -4701,6 +4817,195 @@ const clearParagraphContent = (paragraphId: number) => {
                       }}
                     />
                     
+                    {/* Optional Admin & Logistics Subsections (MCO only) */}
+                    {paragraph.title === 'Administration and Logistics' && formData.documentType === 'mco' && (
+                      <div style={{ 
+                        marginTop: '16px', 
+                        padding: '16px', 
+                        backgroundColor: '#f9fafb', 
+                        borderRadius: '8px',
+                        border: '1px solid #e5e7eb'
+                      }}>
+                        <div style={{ 
+                          fontSize: '14px', 
+                          fontWeight: '600', 
+                          color: '#374151', 
+                          marginBottom: '12px' 
+                        }}>
+                          <i className="fas fa-plus-circle" style={{ marginRight: '8px' }}></i>
+                          Optional Sub-sections (MCO only):
+                        </div>
+                        
+                        {/* Add Buttons */}
+                        {(!adminSubsections.recordsManagement.show || !adminSubsections.privacyAct.show) && (
+                          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                            {!adminSubsections.recordsManagement.show && (
+                              <button
+                                type="button"
+                                onClick={addRecordsManagement}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#10b981',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                <i className="fas fa-plus"></i>
+                                Add Records Management
+                              </button>
+                            )}
+                            
+                            {!adminSubsections.privacyAct.show && (
+                              <button
+                                type="button"
+                                onClick={addPrivacyAct}
+                                style={{
+                                  padding: '8px 16px',
+                                  backgroundColor: '#3b82f6',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '6px',
+                                  fontSize: '14px',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px'
+                                }}
+                              >
+                                <i className="fas fa-plus"></i>
+                                Add Privacy Act Statement
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Records Management Subsection */}
+                        {adminSubsections.recordsManagement.show && (
+                          <div style={{ 
+                            marginBottom: '16px', 
+                            padding: '12px',
+                            backgroundColor: 'white',
+                            borderRadius: '6px',
+                            border: '2px solid #10b981'
+                          }}>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center',
+                              marginBottom: '8px'
+                            }}>
+                              <div style={{ 
+                                fontWeight: 'bold', 
+                                color: '#10b981',
+                                fontSize: '14px'
+                              }}>
+                                4{getSubsectionLetter('recordsManagement')}. <u>Records Management</u>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={removeRecordsManagement}
+                                style={{
+                                  padding: '4px 12px',
+                                  backgroundColor: '#ef4444',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <i className="fas fa-times"></i> Remove
+                              </button>
+                            </div>
+                            <textarea
+                              value={adminSubsections.recordsManagement.content}
+                              onChange={(e) => setAdminSubsections(prev => ({
+                                ...prev,
+                                recordsManagement: { ...prev.recordsManagement, content: e.target.value }
+                              }))}
+                              style={{
+                                width: '100%',
+                                minHeight: '80px',
+                                padding: '8px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '4px',
+                                fontSize: '14px',
+                                fontFamily: 'inherit',
+                                resize: 'vertical'
+                              }}
+                            />
+                          </div>
+                        )}
+                        
+                        {/* Privacy Act Subsection */}
+                        {adminSubsections.privacyAct.show && (
+                          <div style={{ 
+                            marginBottom: '16px', 
+                            padding: '12px',
+                            backgroundColor: 'white',
+                            borderRadius: '6px',
+                            border: '2px solid #3b82f6'
+                          }}>
+                            <div style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center',
+                              marginBottom: '8px'
+                            }}>
+                              <div style={{ 
+                                fontWeight: 'bold', 
+                                color: '#3b82f6',
+                                fontSize: '14px'
+                              }}>
+                                4{getSubsectionLetter('privacyAct')}. <u>Privacy Act Statement</u>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={removePrivacyAct}
+                                style={{
+                                  padding: '4px 12px',
+                                  backgroundColor: '#ef4444',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <i className="fas fa-times"></i> Remove
+                              </button>
+                            </div>
+                            <textarea
+                              value={adminSubsections.privacyAct.content}
+                              onChange={(e) => setAdminSubsections(prev => ({
+                                ...prev,
+                                privacyAct: { ...prev.privacyAct, content: e.target.value }
+                              }))}
+                              style={{
+                                width: '100%',
+                                minHeight: '80px',
+                                padding: '8px',
+                                border: '1px solid #d1d5db',
+                                borderRadius: '4px',
+                                fontSize: '14px',
+                                fontFamily: 'inherit',
+                                resize: 'vertical'
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* END OF ADDED CODE */}
+                    
                     {/* Voice Input and Underline buttons */}
                     <div style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
                       {/* Voice Input Button */}
@@ -4958,7 +5263,241 @@ const clearParagraphContent = (paragraphId: number) => {
                 </div>
               )}
             </div>
+{/* ADD THIS ENTIRE PCN/COPY TO SECTION HERE */}
+            <Card style={{ marginBottom: '1.5rem' }}>
+              <CardHeader>
+                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                  <i className="fas fa-share-nodes" style={{ marginRight: '8px' }}></i>
+                  Distribution Format (PCN / Copy To)
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {/* Yes/No Toggle */}
+                <div style={{ display: 'flex', gap: '24px', marginBottom: '16px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="showPCNDistribution"
+                      checked={showDistribution}
+                      onChange={() => setShowDistribution(true)}
+                      style={{ marginRight: '8px', transform: 'scale(1.2)' }}
+                    />
+                    <span style={{ fontSize: '16px', fontWeight: '500' }}>Yes</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="showPCNDistribution"
+                      checked={!showDistribution}
+                      onChange={() => { 
+                        setShowDistribution(false); 
+                        setDistributionType('none');
+                        setPcn('');
+                        setCopyToList([]);
+                      }}
+                      style={{ marginRight: '8px', transform: 'scale(1.2)' }}
+                    />
+                    <span style={{ fontSize: '16px', fontWeight: '500' }}>No</span>
+                  </label>
+                </div>
 
+                {showDistribution && (
+                  <div>
+                    {/* Distribution Type Selector */}
+                    <div style={{ 
+                      padding: '16px', 
+                      backgroundColor: '#f9fafb', 
+                      borderRadius: '8px',
+                      border: '1px solid #e5e7eb',
+                      marginBottom: '16px'
+                    }}>
+                      <div style={{ 
+                        fontSize: '14px', 
+                        fontWeight: '600', 
+                        color: '#374151', 
+                        marginBottom: '12px' 
+                      }}>
+                        Select Distribution Format:
+                      </div>
+                      
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        {/* PCN Only */}
+                        <label style={{ display: 'flex', alignItems: 'flex-start', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            name="distributionType"
+                            value="pcn-only"
+                            checked={distributionType === 'pcn-only'}
+                            onChange={(e) => setDistributionType(e.target.value as any)}
+                            style={{ marginRight: '8px', marginTop: '2px' }}
+                          />
+                          <div>
+                            <div style={{ fontWeight: '500' }}>PCN Only</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginLeft: '0px' }}>
+                              Shows: DISTRIBUTION: PCN 10207570000
+                            </div>
+                          </div>
+                        </label>
+                        
+                        {/* PCN with Copy To */}
+                        <label style={{ display: 'flex', alignItems: 'flex-start', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            name="distributionType"
+                            value="pcn-with-copy"
+                            checked={distributionType === 'pcn-with-copy'}
+                            onChange={(e) => setDistributionType(e.target.value as any)}
+                            style={{ marginRight: '8px', marginTop: '2px' }}
+                          />
+                          <div>
+                            <div style={{ fontWeight: '500' }}>PCN with Copy To List</div>
+                            <div style={{ fontSize: '12px', color: '#6b7280', marginLeft: '0px' }}>
+                              Shows: DISTRIBUTION: PCN<br/>
+                              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Copy to: 8145001 (2)
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* PCN Input Field */}
+                    {(distributionType === 'pcn-only' || distributionType === 'pcn-with-copy') && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <label style={{ 
+                          display: 'block', 
+                          marginBottom: '8px', 
+                          fontWeight: '500',
+                          color: '#374151'
+                        }}>
+                          Publication Control Number (PCN):
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={pcn}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            if (value === '' || (/^\d{0,11}$/.test(value))) {
+                              setPcn(value);
+                            }
+                          }}
+                          placeholder="Enter 11-digit PCN (e.g., 10207570000)"
+                          maxLength={11}
+                          style={{
+                            fontFamily: 'monospace',
+                            fontSize: '16px',
+                            letterSpacing: '1px'
+                          }}
+                        />
+                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
+                          {pcn.length}/11 digits {pcn.length === 11 ? '✓' : ''}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Copy To List */}
+                    {distributionType === 'pcn-with-copy' && (
+                      <div style={{ 
+                        padding: '16px', 
+                        backgroundColor: '#f0fdf4', 
+                        borderRadius: '8px',
+                        border: '2px solid #86efac',
+                        marginBottom: '16px'
+                      }}>
+                        <div style={{ 
+                          fontSize: '14px', 
+                          fontWeight: '600', 
+                          color: '#166534', 
+                          marginBottom: '12px' 
+                        }}>
+                          Copy to Distribution Codes:
+                        </div>
+                        
+                        {copyToList.map((item, index) => (
+                          <div key={index} style={{ 
+                            display: 'flex', 
+                            gap: '12px', 
+                            marginBottom: '12px',
+                            alignItems: 'center'
+                          }}>
+                            <div style={{ flex: 1 }}>
+                              <input
+                                type="text"
+                                className="form-control"
+                                value={item.code}
+                                onChange={(e) => updateCopyToCode(index, e.target.value)}
+                                placeholder="7-digit code (e.g., 8145001)"
+                                maxLength={7}
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <div style={{ width: '100px' }}>
+                              <input
+                                type="number"
+                                className="form-control"
+                                value={item.qty}
+                                onChange={(e) => updateCopyToQty(index, parseInt(e.target.value) || 1)}
+                                min={1}
+                                max={99}
+                                placeholder="Qty"
+                                style={{
+                                  fontFamily: 'monospace',
+                                  fontSize: '14px'
+                                }}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => removeCopyToEntry(index)}
+                              style={{
+                                padding: '6px 12px',
+                                backgroundColor: '#ef4444',
+                                color: 'white',
+                                border: 'none',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              <i className="fas fa-times"></i>
+                            </button>
+                          </div>
+                        ))}
+                        
+                        <button
+                          type="button"
+                          onClick={addCopyToEntry}
+                          style={{
+                            padding: '8px 16px',
+                            backgroundColor: '#10b981',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '6px',
+                            fontSize: '14px',
+                            fontWeight: '500',
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}
+                        >
+                          <i className="fas fa-plus"></i>
+                          Add Distribution Code
+                        </button>
+                        
+                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px' }}>
+                          Format: 7-digit code with quantity (1-99)
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            {/* END OF NEW PCN/COPY TO SECTION */}
 
           </div>
           
