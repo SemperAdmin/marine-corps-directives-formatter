@@ -440,8 +440,7 @@ interface FormData {
   referenceDate: string;
   basicLetterReference: string;
   
-  // ✅… ADD: Missing endorsement property
-  endorsementLevel?: string;
+  // endorsementLevel removed — endorsements not supported in this build
 }
 
 interface SavedLetter {
@@ -497,6 +496,7 @@ interface SavedLetter {
   enclosures: string[];
   distribution: DistributionEntry[];
   paragraphs: ParagraphData[];
+  basicLetterReference?: string;
 }
 
 
@@ -1050,7 +1050,7 @@ const REFERENCE_TYPES = [
   { value: 'notice', label: 'Notice' },
   { value: 'order', label: 'Order' },
   { value: 'directive', label: 'Directive' },
-  { value: 'endorsement', label: 'Endorsement' }
+  // Endorsement reference type removed — endorsements not supported in this build
 ];
 
 // Common "who" examples for autocomplete/suggestions
@@ -1075,251 +1075,35 @@ interface StructuredReferenceInputProps {
 }
 
 function StructuredReferenceInput({ formData, setFormData }: StructuredReferenceInputProps) {
-  const generateReferenceString = (who: string, type: string, date: string): string => {
-    if (!who || !type || !date) return '';
-    return `${who}'s ${type} dtd ${date}`;
-  };
-
+  // Lightweight, well-formed StructuredReferenceInput to avoid large JSX blocks
   const updateReference = (field: 'who' | 'type' | 'date', value: string) => {
-    const newWho = field === 'who' ? value : formData.referenceWho;
-    const newType = field === 'type' ? value : formData.referenceType;
-    const newDate = field === 'date' ? value : formData.referenceDate;
-    
-    const fullReference = generateReferenceString(newWho, newType, newDate);
-    
-    setFormData((prev: FormData) => ({
-      ...prev,
-      referenceWho: newWho,
-      referenceType: newType,
-      referenceDate: newDate,
-      basicLetterReference: fullReference
-    }));
-  };
-
-  const parseAndFormatDate = (dateString: string) => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
-    // If already in Naval format, return as-is
-    const navalPattern = /^\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{2}$/i;
-    if (navalPattern.test(dateString)) {
-      return dateString;
-    }
-
-    let date: Date | null = null;
-
-    // Handle various date formats
-    if (dateString.toLowerCase() === 'today' || dateString.toLowerCase() === 'now') {
-      date = new Date();
-    } else if (/^\d{8}$/.test(dateString)) {
-      const year = dateString.substring(0, 4);
-      const month = dateString.substring(4, 6);
-      const day = dateString.substring(6, 8);
-      date = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
-    } else if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(dateString)) {
-      date = new Date(dateString);
-    } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
-      const parts = dateString.split('/');
-      date = new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
-    } else {
-      try {
-        const parsedDate = new Date(dateString);
-        if (!isNaN(parsedDate.getTime())) {
-          date = parsedDate;
-        }
-      } catch (e) {
-        // ignore invalid date strings
-      }
-    }
-
-    if (!date || isNaN(date.getTime())) {
-      return dateString; // Return original if can't parse
-    }
-
-    const day = date.getDate();
-    const month = months[date.getMonth()];
-    const year = date.getFullYear().toString().slice(-2);
-    
-    return `${day} ${month} ${year}`;
-  };
-
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const formatted = parseAndFormatDate(e.target.value);
-    updateReference('date', formatted);
+    setFormData(prev => ({ ...prev, [field === 'who' ? 'referenceWho' : field === 'type' ? 'referenceType' : 'referenceDate']: value } as any));
   };
 
   return (
-    <div style={{ marginBottom: '1.5rem' }}>
-      <div style={{
-        background: 'linear-gradient(135deg, #1e40af, #3b82f6)',
-        color: 'white',
-        padding: '12px 16px',
-        borderRadius: '8px 8px 0 0',
-        fontWeight: '600',
-        fontSize: '1rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '8px'
-      }}>
-        Basic Letter Reference Components
-      </div>
-      
-      <div style={{
-        background: '#f8fafc',
-        border: '1px solid #e2e8f0',
-        borderTop: 'none',
-        borderRadius: '0 0 8px 8px',
-        padding: '16px'
-      }}>
-        <div style={{
-          background: '#dbeafe',
-          border: '1px solid #93c5fd',
-          borderRadius: '6px',
-          padding: '12px',
-          marginBottom: '16px'
-        }}>
-          <div style={{ marginBottom: '8px' }}>
-            <span style={{ fontWeight: '600', color: '#1e40af' }}>Format:</span>
-            <span style={{ color: '#1e40af', marginLeft: '8px' }}>on [who]'s [type] dtd [date]</span>
-          </div>
-          <div>
-            <span style={{ fontWeight: '600', color: '#1e40af' }}>Examples:</span>
-            <span style={{ color: '#1e40af', marginLeft: '8px' }}>on CO's ltr dtd 12 Jul 25 • on GySgt Admin's AA Form dtd 15 Aug 25</span>
-          </div>
-        </div>
-        
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: '1fr 1fr 1fr',
-          gap: '20px',
-          marginBottom: '16px',
-          width: '100%',
-          minWidth: 0
-        }}>
-          <div style={{minWidth: 0, width: '100%'}}>
-            <label style={{
-              display: 'block',
-              fontWeight: '500',
-              color: '#374151',
-              marginBottom: '4px'
-            }}>Who</label>
-            <input
-              type="text"
-              value={formData.referenceWho}
-              onChange={(e) => updateReference('who', e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                outline: 'none',
-                boxSizing: 'border-box',
-                minWidth: 0
-              }}
-              placeholder="CO, GySgt Admin, etc."
-              list="common-originators"
-              onFocus={(e) => {
-                e.target.style.borderColor = '#3b82f6';
-                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = '#d1d5db';
-                e.target.style.boxShadow = 'none';
-              }}
-            />
-            <datalist id="common-originators">{COMMON_ORIGINATORS.map(originator => (<option key={originator} value={originator} />))}</datalist>
-            <div style={{fontSize: '12px', color: '#6b7280', marginTop: '4px', wordWrap: 'break-word'}}>Who originated the basic letter?</div>
-          </div>
-          
-          <div style={{minWidth: 0, width: '100%'}}>
-            <label style={{
-              display: 'block',
-              fontWeight: '500',
-              color: '#374151',
-              marginBottom: '4px'
-            }}>Type</label>
-            <select
-              value={formData.referenceType}
-              onChange={(e) => updateReference('type', e.target.value)}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                outline: 'none',
-                background: 'white',
-                boxSizing: 'border-box',
-                minWidth: 0
-              }}
-              onFocus={(e) => {
-                e.target.style.borderColor = '#3b82f6';
-                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = '#d1d5db';
-                e.target.style.boxShadow = 'none';
-              }}
-            >
-              <option value="">Select type</option>{REFERENCE_TYPES.map(type => (<option key={type.value} value={type.value}>{type.value}</option>))}
-            </select>
-            <div style={{fontSize: '12px', color: '#6b7280', marginTop: '4px', wordWrap: 'break-word'}}>What type of document?</div>
-          </div>
-          
-          <div style={{minWidth: 0, width: '100%'}}>
-            <label style={{
-              display: 'block',
-              fontWeight: '500',
-              color: '#374151',
-              marginBottom: '4px'
-            }}>Date</label>
-            <input
-              type="text"
-              value={formData.referenceDate}
-              onChange={handleDateChange}
-              style={{
-                width: '100%',
-                padding: '8px 12px',
-                border: '1px solid #d1d5db',
-                borderRadius: '6px',
-                fontSize: '14px',
-                outline: 'none',
-                boxSizing: 'border-box',
-                minWidth: 0
-              }}
-              placeholder="8 Jul 25"
-              onFocus={(e) => {
-                e.target.style.borderColor = '#3b82f6';
-                e.target.style.boxShadow = '0 0 0 3px rgba(59, 130, 246, 0.1)';
-              }}
-              onBlur={(e) => {
-                e.target.style.borderColor = '#d1d5db';
-                e.target.style.boxShadow = 'none';
-              }}
-            />
-            <div style={{fontSize: '12px', color: '#6b7280', marginTop: '4px', wordWrap: 'break-word', lineHeight: '1.3'}}>Accepts: YYYYMMDD, MM/DD/YYYY, YYYY-MM-DD, DD MMM YY, or "today". Auto-formats to Naval standard.</div>
-          </div>
-        </div>
-        
-        {formData.endorsementLevel && (
-          <div style={{ marginTop: '12px' }}>
-            {!formData.referenceWho && (
-              <div style={{ color: '#dc2626', fontSize: '14px', marginBottom: '4px' }}>
-                • Please specify who originated the basic letter
-              </div>
-            )}
-            {!formData.referenceType && (
-              <div style={{ color: '#dc2626', fontSize: '14px', marginBottom: '4px' }}>
-                • Please select the document type
-              </div>
-            )}
-            {!formData.referenceDate && (
-              <div style={{ color: '#dc2626', fontSize: '14px', marginBottom: '4px' }}>
-                • Please enter the document date
-              </div>
-            )}
-          </div>
-        )}
+    <div style={{ marginBottom: '1rem' }}>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <input
+          type="text"
+          placeholder="Who (e.g., CO)"
+          value={formData.referenceWho}
+          onChange={(e) => updateReference('who', e.target.value)}
+          style={{ flex: 1 }}
+        />
+        <input
+          type="text"
+          placeholder="Type (e.g., ltr)"
+          value={formData.referenceType}
+          onChange={(e) => updateReference('type', e.target.value)}
+          style={{ width: 140 }}
+        />
+        <input
+          type="text"
+          placeholder="Date (e.g., 8 Jul 25)"
+          value={formData.referenceDate}
+          onChange={(e) => updateReference('date', e.target.value)}
+          style={{ width: 130 }}
+        />
       </div>
     </div>
   );
@@ -1394,29 +1178,7 @@ const ReferencesSection = ({ references, setReferences, formData, setFormData }:
 
                 {showRef && (
                     <div className="space-y-4">
-                        {formData.documentType === 'endorsement' && (
-                            <>
-                                <div className="mt-2 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-r-lg mb-4">
-                                    <div className="flex">
-                                        <div className="py-1"><i className="fas fa-exclamation-triangle fa-lg mr-3"></i></div>
-                                        <div>
-                                            <p className="font-bold">Endorsement Reference Rules</p>
-                                            <p className="text-sm">Only add NEW references not mentioned in the basic letter or previous endorsements. Continue the lettering sequence from the last reference.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="input-group">
-                                    <span className="input-group-text">Starting Reference:</span>
-                                    <select
-                                        className="form-control"
-                                        value={formData.startingReferenceLevel}
-                                        onChange={(e) => setFormData({ ...formData, startingReferenceLevel: e.target.value })}
-                                    >
-                                        {generateReferenceOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                    </select>
-                                </div>
-                            </>
-                        )}
+            {/* Endorsement-specific guidance removed */}
                         <label className="block font-semibold mb-2">
                             <i className="fas fa-bookmark mr-2"></i>
                             Enter Reference(s):
@@ -1573,29 +1335,7 @@ const EnclosuresSection = ({ enclosures, setEnclosures, formData, setFormData, g
 
                 {showEncl && (
                     <div className="space-y-4">
-                        {formData.documentType === 'endorsement' && (
-                             <>
-                                <div className="mt-2 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-r-lg mb-4">
-                                    <div className="flex">
-                                        <div className="py-1"><i className="fas fa-exclamation-triangle fa-lg mr-3"></i></div>
-                                        <div>
-                                            <p className="font-bold">Endorsement Enclosure Rules</p>
-                                            <p className="text-sm">Only add NEW enclosures not mentioned in the basic letter or previous endorsements. Continue the numbering sequence from the last enclosure.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
-                                    <span className="font-medium text-gray-700 whitespace-nowrap">Starting Enclosure:</span>
-                                    <select
-                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                        value={formData.startingEnclosureNumber}
-                                        onChange={(e) => setFormData({ ...formData, startingEnclosureNumber: e.target.value })}
-                                    >
-                                        {generateEnclosureOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                                    </select>
-                                </div>
-                            </>
-                        )}
+            {/* Endorsement-specific guidance removed */}
                         
                         <div className="space-y-3">
                             <h4 className="font-semibold text-gray-700 flex items-center">
@@ -1714,8 +1454,7 @@ export default function MarineCorpsDirectivesFormatter() {
     referenceWho: '',
     referenceType: '',
     referenceDate: '',
-    basicLetterReference: '',
-    endorsementLevel: '1st'
+    basicLetterReference: ''
   });
 
   const [validation, setValidation] = useState<ValidationState>({
@@ -1936,10 +1675,11 @@ useEffect(() => {
   };
   
   const loadLetter = (letterToLoad: SavedLetter) => {
-    setFormData({
+    setFormData(prev => ({
+      ...prev,
       documentType: letterToLoad.documentType as 'mco' | 'mcbul',
 
-    // ✅… NEW: Essential Directive Elements
+      // ✅… NEW: Essential Directive Elements
       distributionStatement: {
         code: (letterToLoad.distributionStatement?.code as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X') || 'A',
         reason: letterToLoad.distributionStatement?.reason,
@@ -1986,9 +1726,8 @@ useEffect(() => {
       referenceWho: '',
       referenceType: '',
       referenceDate: '',
-      basicLetterReference: '',
-      endorsementLevel: '1st'
-    });
+      basicLetterReference: ''
+    }));
     setReferences(letterToLoad.references || []);
     setEnclosures(letterToLoad.enclosures || []);
     setDistribution(letterToLoad.distribution || []);
@@ -2021,11 +1760,7 @@ const validateDirectiveReference = (formData: FormData): string[] => {
   if (!formData.ssic) {
     errors.push('SSIC code is required for directives');
   }
-  
-  if (formData.documentType !== 'basic' && !formData.originatorCode) {
-    errors.push('Originator code is required for directives');
-  }
-  
+    
   return errors;
 };
 
@@ -2087,27 +1822,21 @@ const validateDirectiveReference = (formData: FormData): string[] => {
     setFormData(prev => ({ ...prev, date: formatted }));
   };
   
+  // Document type change handler: accept 'mco' or 'mcbul' and reset reference/enclosure defaults
   const handleDocumentTypeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newType = e.target.value as 'basic' | 'endorsement';
+    const newType = e.target.value as 'mco' | 'mcbul';
     setFormData(prev => ({
       ...prev,
       documentType: newType,
-      // Reset endorsement fields if switching back to basic
-      endorsementLevel: newType === 'basic' ? '' : prev.endorsementLevel,
-      basicLetterReference: newType === 'basic' ? '' : prev.basicLetterReference,
-      referenceWho: newType === 'basic' ? '' : prev.referenceWho,
-      referenceType: newType === 'basic' ? '' : prev.referenceType,
-      referenceDate: newType === 'basic' ? '' : prev.referenceDate,
+      basicLetterReference: '',
+      referenceWho: '',
+      referenceType: '',
+      referenceDate: '',
       startingReferenceLevel: 'a',
       startingEnclosureNumber: '1',
       startingPageNumber: 1,
       previousPackagePageCount: 0,
     }));
-  };
-
-  const handleEndorsementLevelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const level = e.target.value;
-    setFormData(prev => ({ ...prev, endorsementLevel: level }));
   };
 
 
@@ -3910,33 +3639,17 @@ const clearParagraphContent = (paragraphId: number) => {
     {/* Header Section */}
     <div className="form-section" style={{ textAlign: 'center', marginBottom: '30px' }}>
       <h1 className="text-4xl font-bold text-center mb-2 text-black font-display tracking-wide">
-        {
-          {
-            'basic': 'Marine Corps Directives Formatter',
-            'endorsement': 'Marine Corps Endorsement Generator',
-            'mco': 'Marine Corps Orders Formatter',
-            'mcbul': 'Marine Corps Bulletins Formatter'
-          }[formData.documentType]
-        }
+        {{ 'mco': 'Marine Corps Orders Formatter', 'mcbul': 'Marine Corps Bulletins Formatter' }[formData.documentType] || 'Marine Corps Directives Formatter'}
       </h1>
       <p className="text-center text-gray-600 text-sm mb-1">by Semper Admin</p>
       <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20251005</p>
     </div>
 
-{/* Document Type Selector */}
-<div className="form-section">
-  <div className="section-legend">
-    <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
-    Choose Document Type
-  </div>
-  
-  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '1rem' }}>
-    {/* MCO Card */}
     <button
       type="button"
       className={`btn ${
-        formData.documentType === 'mco' 
-          ? 'btn-danger' 
+        formData.documentType === 'mco'
+          ? 'btn-danger'
           : 'btn-outline-secondary'
       }`}
       onClick={() => setFormData(prev => ({ ...prev, documentType: 'mco' }))}
@@ -3958,16 +3671,16 @@ const clearParagraphContent = (paragraphId: number) => {
       }}
       onMouseEnter={(e) => {
         if (formData.documentType !== 'mco') {
-          e.currentTarget.style.borderColor = '#dc3545';
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = '0 4px 15px rgba(220, 53, 69, 0.2)';
+          (e.currentTarget as HTMLButtonElement).style.borderColor = '#dc3545';
+          (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-2px)';
+          (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 4px 15px rgba(220, 53, 69, 0.2)';
         }
       }}
       onMouseLeave={(e) => {
         if (formData.documentType !== 'mco') {
-          e.currentTarget.style.borderColor = '#dee2e6';
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
+          (e.currentTarget as HTMLButtonElement).style.borderColor = '#dee2e6';
+          (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(0)';
+          (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 2px 10px rgba(0, 0, 0, 0.1)';
         }
       }}
     >
@@ -4094,7 +3807,7 @@ const clearParagraphContent = (paragraphId: number) => {
             → Temporary Guidance
           </div>
         </div>
-</div>  {/* End of Document Type Selector */}
+      </div>  {/* End of Document Type Selector */}
 
 
 {/* Next section continues here */}
@@ -4206,135 +3919,9 @@ const clearParagraphContent = (paragraphId: number) => {
               
             </div>
           </div>
-  </div>
-</div>
+        </div>
+      </div>
           
-
-
-          {/* Endorsement-Specific Fields */}
-          {(formData.documentType === 'endorsement') && (
-             <div className="form-section">
-                <div className="section-legend" style={{ background: 'linear-gradient(45deg, #0d47a1, #1976d2)', border: '2px solid rgba(25, 118, 210, 0.3)' }}>
-                    <i className="fas fa-file-signature" style={{ marginRight: '8px' }}></i>
-                    Endorsement Details
-                </div>
-
-                <div className="input-group">
-                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #0d47a1, #1976d2)' }}>
-                        <i className="fas fa-sort-numeric-up" style={{ marginRight: '8px' }}></i>
-                        Endorsement Level:
-                    </span>
-                    <select
-                        className="form-control"
-                        value={formData.endorsementLevel}
-                        onChange={handleEndorsementLevelChange}
-                        required
-                    >
-                        <option value="" disabled>Select endorsement level...</option>
-                          <>
-                            <option value="FIRST">FIRST ENDORSEMENT</option>
-                            <option value="SECOND">SECOND ENDORSEMENT</option>
-                            <option value="THIRD">THIRD ENDORSEMENT</option>
-                            <option value="FOURTH">FOURTH ENDORSEMENT</option>
-                            <option value="FIFTH">FIFTH ENDORSEMENT</option>
-                            <option value="SIXTH">SIXTH ENDORSEMENT</option>
-                          </>
-                    </select>
-                </div>
-
-                {formData.endorsementLevel && (
-                  <StructuredReferenceInput formData={formData} setFormData={setFormData} />
-                )}
-                
-
-                 
-                {formData.endorsementLevel && (
-                    <div style={{ marginTop: '1rem' }}>
-                         {/* Page Numbering Section */}
-                        <div style={{ 
-                          backgroundColor: '#fef3c7', 
-                          border: '1px solid #fbbf24', 
-                          borderRadius: '8px', 
-                          padding: '0.75rem',
-                          marginBottom: '1rem'
-                        }}>
-                          <h4 style={{ 
-                            fontWeight: '500', 
-                            color: '#92400e', 
-                            marginBottom: '0.5rem',
-                            fontSize: '1rem'
-                          }}>Page Numbering</h4>
-                          <div>
-                            <label style={{ 
-                              display: 'block', 
-                              fontSize: '0.875rem', 
-                              fontWeight: '500', 
-                              color: '#92400e', 
-                              marginBottom: '0.25rem'
-                            }}>
-                              Last Page # of Previous Document
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max="100"
-                              value={formData.previousPackagePageCount}
-                              onChange={(e) => {
-                                const newPrevCount = parseInt(e.target.value) || 0;
-                                setFormData(prev => ({
-                                  ...prev,
-                                  previousPackagePageCount: newPrevCount,
-                                  startingPageNumber: newPrevCount + 1
-                                }))
-                              }}
-                              style={{
-                                width: '100%',
-                                padding: '0.5rem 0.75rem',
-                                border: '1px solid #fbbf24',
-                                borderRadius: '0.375rem',
-                                fontSize: '1rem'
-                              }}
-                            />
-                            <p style={{ 
-                              fontSize: '0.75rem', 
-                              color: '#92400e', 
-                              marginTop: '0.25rem'
-                            }}>
-                              Enter the last page number of the document you are endorsing.
-                            </p>
-                          </div>
-                           <div style={{
-                             marginTop: '0.75rem',
-                             padding: '0.5rem',
-                             backgroundColor: '#fde68a',
-                             borderRadius: '4px'
-                           }}>
-                            <strong style={{ color: '#92400e' }}>
-                              Your {formData.endorsementLevel} endorsement will start on page {formData.startingPageNumber}.
-                            </strong>
-                          </div>
-                        </div>
-                    </div>
-                )}
-                 <div style={{
-                   marginTop: '1rem',
-                   padding: '0.75rem',
-                   backgroundColor: '#dbeafe',
-                   borderLeft: '4px solid #3b82f6',
-                   color: '#1e40af',
-                   borderRadius: '0 0.5rem 0.5rem 0'
-                 }}>
-                    <div style={{ display: 'flex' }}>
-                 <div style={{ paddingTop: '0.25rem' }}><i className="fas fa-info-circle" style={{ fontSize: '1.125rem', marginRight: '0.5rem' }}></i></div>
-                 <div>
-                     <p style={{ fontWeight: 'bold', margin: 0 }}>Endorsement Mode</p>
-                     <p style={{ fontSize: '0.875rem', margin: 0 }}>Endorsements forward the original letter. The "From" field becomes the endorsing command, and the "To" field is the next destination.</p>
-                 </div>
-                 </div>
-             </div>
-         </div>
-       )}
-
           {/* MCBul-Specific Fields */}
           {(formData.documentType === 'mcbul') && (
              <div className="form-section">
@@ -4430,7 +4017,7 @@ const clearParagraphContent = (paragraphId: number) => {
           )}
 
 
-         {/* Unit Information Section */
+         {/* Unit Information Section */}
          <div className="form-section">
            <div className="section-legend">
              <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
@@ -4501,7 +4088,7 @@ const clearParagraphContent = (paragraphId: number) => {
                 onChange={(e) => setFormData(prev => ({ ...prev, line3: autoUppercase(e.target.value) }))}
               />
             </div>
-          </div>}
+          </div>
 
           {/* Required Information */}
           <div className="form-section">
@@ -4802,29 +4389,6 @@ const clearParagraphContent = (paragraphId: number) => {
 
                 {showRef && (
                   <div className="dynamic-section">
-                    {formData.documentType === 'endorsement' && (
-                      <>
-                        <div className="mt-2 p-3 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 rounded-r-lg mb-4">
-                          <div className="flex">
-                            <div className="py-1"><i className="fas fa-exclamation-triangle fa-lg mr-3"></i></div>
-                            <div>
-                              <p className="font-bold">Endorsement Reference Rules</p>
-                              <p className="text-sm">Only add NEW references not mentioned in the basic letter or previous endorsements. Continue the lettering sequence from the last reference.</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="input-group">
-                          <span className="input-group-text">Starting Reference:</span>
-                          <select
-                            className="form-control"
-                            value={formData.startingReferenceLevel}
-                            onChange={(e) => setFormData({ ...formData, startingReferenceLevel: e.target.value })}
-                          >
-                            {generateReferenceOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                          </select>
-                        </div>
-                      </>
-                    )}
                     <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
                       <i className="fas fa-bookmark" style={{ marginRight: '8px' }}></i>
                       Enter Reference(s):
@@ -4930,64 +4494,33 @@ const clearParagraphContent = (paragraphId: number) => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-<div className="radio-group">
-  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-    <input
-      type="radio"
-      name="ifEncl"
-      value="yes"
-      checked={showEncl}
-      onChange={() => setShowEncl(true)}
-      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
-    />
-    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>Yes</span>
-  </label>
-  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-    <input
-      type="radio"
-      name="ifEncl"
-      value="no"
-      checked={!showEncl}
-      onChange={() => { setShowEncl(false); setEnclosures(['']); }}
-      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
-    />
-    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>No</span>
-  </label>
-</div>
+                <div className="radio-group">
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="ifEncl"
+                      value="yes"
+                      checked={showEncl}
+                      onChange={() => setShowEncl(true)}
+                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>Yes</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="ifEncl"
+                      value="no"
+                      checked={!showEncl}
+                      onChange={() => { setShowEncl(false); setEnclosures(['']); }}
+                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>No</span>
+                  </label>
+                </div>
 
                 {showEncl && (
                   <div className="dynamic-section">
-                    {formData.documentType === 'endorsement' && (
-                      <>
-                        <div style={{ marginTop: '0.5rem', padding: '0.75rem', backgroundColor: '#fef3c7', borderLeft: '4px solid #f59e0b', color: '#92400e', borderRadius: '0 0.5rem 0.5rem 0', marginBottom: '1rem' }}>
-                          <div style={{ display: 'flex' }}>
-                            <div style={{ paddingTop: '0.25rem' }}><i className="fas fa-exclamation-triangle" style={{ fontSize: '1.125rem', marginRight: '0.75rem' }}></i></div>
-                            <div>
-                              <p style={{ fontWeight: 'bold', margin: 0 }}>Endorsement Enclosure Rules</p>
-                              <p style={{ fontSize: '0.875rem', margin: 0 }}>Only add NEW enclosures not mentioned in the basic letter or previous endorsements. Continue the numbering sequence from the last enclosure.</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.75rem', backgroundColor: '#f9fafb', borderRadius: '0.5rem', border: '1px solid #e5e7eb', marginBottom: '1rem' }}>
-                          <span style={{ fontWeight: '500', color: '#374151', whiteSpace: 'nowrap' }}>Starting Enclosure:</span>
-                          <select
-                            style={{ flex: 1, padding: '0.5rem 0.75rem', border: '1px solid #d1d5db', borderRadius: '0.375rem', outline: 'none' }}
-                            value={formData.startingEnclosureNumber}
-                            onChange={(e) => setFormData({ ...formData, startingEnclosureNumber: e.target.value })}
-                            onFocus={(e) => {
-                              e.target.style.borderColor = '#3b82f6';
-                              e.target.style.boxShadow = '0 0 0 2px rgba(59, 130, 246, 0.5)';
-                            }}
-                            onBlur={(e) => {
-                              e.target.style.borderColor = '#d1d5db';
-                              e.target.style.boxShadow = 'none';
-                            }}
-                          >
-                            {generateEnclosureOptions().map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-                          </select>
-                        </div>
-                      </>
-                    )}
                     <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
                       <i className="fas fa-paperclip" style={{ marginRight: '8px' }}></i>
                       Enter Enclosure(s):
@@ -5057,7 +4590,6 @@ const clearParagraphContent = (paragraphId: number) => {
                 )}
               </CardContent>
             </Card>
-
           </div>
 
           {/* Body Paragraphs Section */}
@@ -5511,22 +5043,5 @@ const clearParagraphContent = (paragraphId: number) => {
             </p>
           </div>
         </div>
-      </div>
-
-      {/* Spinning animation for loading */}
-{/* Spinning animation for loading */}
-      <style jsx>{`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        
-        @keyframes pulse {
-          0% { transform: scale(1); opacity: 1; }
-          50% { transform: scale(1.05); opacity: 0.8; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
-    </div>
   );
 }
