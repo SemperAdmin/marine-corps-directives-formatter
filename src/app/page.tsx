@@ -1320,11 +1320,15 @@ interface StructuredReferenceInputProps {
   formData: FormData;
   setFormData: React.Dispatch<React.SetStateAction<FormData>>;
 }
-
 function StructuredReferenceInput({ formData, setFormData }: StructuredReferenceInputProps) {
-  // Lightweight, well-formed StructuredReferenceInput to avoid large JSX blocks
   const updateReference = (field: 'who' | 'type' | 'date', value: string) => {
-    setFormData(prev => ({ ...prev, [field === 'who' ? 'referenceWho' : field === 'type' ? 'referenceType' : 'referenceDate']: value } as any));
+    setFormData((prev: FormData) => {
+      const updates: Partial<FormData> = {};
+      if (field === 'who') updates.referenceWho = value;
+      else if (field === 'type') updates.referenceType = value;
+      else updates.referenceDate = value;
+      return { ...prev, ...updates };
+    });
   };
 
   return (
@@ -1354,7 +1358,7 @@ function StructuredReferenceInput({ formData, setFormData }: StructuredReference
       </div>
     </div>
   );
-}
+};
 
 
 // --- New Components for References and Enclosures ---
@@ -1830,6 +1834,7 @@ export default function MarineCorpsDirectivesFormatter() {
   });
 
   const [showRef, setShowRef] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [showEncl, setShowEncl] = useState(false);
   const [showDelegation, setShowDelegation] = useState(false);
   const [showReports, setShowReports] = useState(false);
@@ -2179,10 +2184,31 @@ useEffect(() => {
     setParagraphs(letterToLoad.paragraphs || []);
   };
 
+const generatePreviewContent = () => {
+  const sortedParagraphs = [...paragraphs].sort((a, b) => a.id - b.id);
+  
+  // Generate citations for each paragraph
+  const paragraphsWithCitations = sortedParagraphs.map((para, index) => {
+    const citation = getUiCitation(para, index, sortedParagraphs);
+    return {
+      ...para,
+      citation: citation
+    };
+  });
+  
+  return {
+    header: {
+      ssic: formData.ssic_code || '',
+      sponsor: formData.sponsor_code || '',
+      date: formData.date_signed || ''
+    },
+    subject: formData.subj || 'Subject Line',
+    from: formData.from || '',
+    paragraphs: paragraphsWithCitations
+  };
+};
 
   // Validation Functions
-
-
   const validateSubject = (value: string) => {
     if (!value) {
       setValidation(prev => ({ ...prev, subj: { isValid: false, message: '' } }));
@@ -2787,10 +2813,7 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
     return errors;
   }, []);
 
-/**
- * Creates a properly formatted subsection paragraph for Word export
- * Used for Records Management and Privacy Act sections
- */
+
 const createSubsectionParagraph = (
   letter: string,
   title: string,
@@ -6513,8 +6536,206 @@ const clearParagraphContent = (paragraphId: number) => {
                 Connect with Semper Admin
               </a>
             </p>
+      </div>
+    </div>
+    {/* Floating Preview Button */}
+        <button
+          type="button"
+          onClick={() => setShowPreview(true)}
+          className="btn btn-primary"
+          style={{
+            position: 'fixed',
+            bottom: '30px',
+            right: '30px',
+            width: '60px',
+            height: '60px',
+            borderRadius: '50%',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            zIndex: 1000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 0
+          }}
+          title="Preview Document"
+        >
+          <i className="fas fa-eye" style={{ fontSize: '24px' }}></i>
+        </button>
+
+        {/* Preview Modal */}
+        {showPreview && (
+          <div 
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.7)',
+              zIndex: 2000,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '20px'
+            }}
+            onClick={() => setShowPreview(false)}
+          >
+            <div 
+              style={{
+                backgroundColor: 'white',
+                borderRadius: '12px',
+                maxWidth: '1000px',
+                width: '100%',
+                maxHeight: '90vh',
+                display: 'flex',
+                flexDirection: 'column',
+                boxShadow: '0 10px 40px rgba(0,0,0,0.3)'
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{
+                padding: '20px',
+                borderBottom: '2px solid #dee2e6',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center'
+              }}>
+                <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
+                  Document Preview
+                </h2>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={generateDocument}
+                    className="btn btn-success"
+                  >
+                    <i className="fas fa-download" style={{ marginRight: '8px' }}></i>
+                    Export from Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPreview(false)}
+                    className="btn btn-secondary"
+                  >
+                    <i className="fas fa-times" style={{ marginRight: '8px' }}></i>
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div style={{
+                flex: 1,
+                overflowY: 'auto',
+                padding: '30px',
+                backgroundColor: '#f5f5f5'
+              }}>
+                <div style={{
+                  backgroundColor: 'white',
+                  width: '8.5in',
+                  minHeight: '11in',
+                  margin: '0 auto',
+                  padding: '1in',
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
+                  fontFamily: formData.bodyFont === 'courier' ? 'Courier New, monospace' : 'Times New Roman, serif',
+                  fontSize: '12pt',
+                  lineHeight: '1.5'
+                }}>
+                  <div style={{ 
+                    textAlign: 'center', 
+                    marginBottom: '30px',
+                    paddingBottom: '20px',
+                    borderBottom: '2px solid black'
+                  }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '14pt', marginBottom: '10px' }}>
+                      DEPARTMENT OF THE NAVY
+                    </div>
+                    <div style={{ fontWeight: 'bold', fontSize: '14pt', marginBottom: '10px' }}>
+                      HEADQUARTERS UNITED STATES MARINE CORPS
+                    </div>
+                    <div style={{ fontSize: '12pt', marginBottom: '20px' }}>
+                      3000 MARINE CORPS PENTAGON<br/>
+                      WASHINGTON, DC 20350-3000
+                    </div>
+                    <div style={{ textAlign: 'right', fontSize: '12pt' }}>
+                      {generatePreviewContent().header.ssic && (
+                        <>
+                          {formData.documentType === 'mco' ? 'MCO' : 'MCBul'} {generatePreviewContent().header.ssic}<br/>
+                          {generatePreviewContent().header.sponsor}<br/>
+                          {generatePreviewContent().header.date}
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div style={{ 
+                    fontWeight: 'bold',
+                    textTransform: 'uppercase',
+                    marginBottom: '30px',
+                    textAlign: 'center'
+                  }}>
+                    {formData.documentType === 'mco' ? 'MARINE CORPS ORDER' : 'MARINE CORPS BULLETIN'}
+                  </div>
+
+                  <div style={{ marginBottom: '30px' }}>
+                    {generatePreviewContent().from && (
+                      <div style={{ marginBottom: '10px' }}>
+                        <span style={{ fontWeight: 'bold' }}>From:</span> {generatePreviewContent().from}
+                      </div>
+                    )}
+                    <div style={{ marginBottom: '10px' }}>
+                      <span style={{ fontWeight: 'bold' }}>To:</span> Distribution List
+                    </div>
+                    <div style={{ marginBottom: '10px' }}>
+                      <span style={{ fontWeight: 'bold' }}>Subj:</span> {generatePreviewContent().subject}
+                    </div>
+                  </div>
+
+                  <div>
+                  {generatePreviewContent().paragraphs.length > 0 ? (
+                    generatePreviewContent().paragraphs.map((para: any) => (
+                      <div 
+                        key={para.id}
+                        style={{ 
+                          marginBottom: '15px',
+                          marginLeft: `${para.level * 0.5}in`
+                        }}
+                      >
+                        <div style={{ whiteSpace: 'pre-wrap' }}>
+                          <strong>{para.citation}</strong> {para.content}
+                        </div>
+                      </div>
+                    ))
+                    ) : (
+                      <div style={{ 
+                        textAlign: 'center', 
+                        color: '#6c757d',
+                        padding: '40px',
+                        fontStyle: 'italic'
+                      }}>
+                        No content to preview. Add paragraphs to see them here.
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{
+                    marginTop: '40px',
+                    paddingTop: '20px',
+                    borderTop: '2px solid black',
+                    textAlign: 'center',
+                    fontSize: '10pt',
+                    color: '#666'
+                  }}>
+                    Page 1 • Generated on {new Date().toLocaleDateString('en-US', { 
+                      year: 'numeric', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-     </div>
-    );
-  }
+        )}
+  </div>
+);
+}
