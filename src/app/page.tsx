@@ -359,6 +359,246 @@ const getParagraphPlaceholder = (paragraph: ParagraphData, documentType: string)
   return docPlaceholders[paragraph.title] || `Enter content for ${paragraph.title}...`;
 };
 
+// ==========================================
+// REPORTS REQUIRED - HELPER FUNCTIONS
+// ==========================================
+
+// Interface for report data
+interface ReportData {
+  id: string;
+  title: string;
+  controlSymbol: string;
+  paragraphRef: string;
+  exempt?: boolean;
+}
+
+// Helper function to format a single report line
+const formatReportLine = (report: ReportData, index: number): string => {
+  const romanNumeral = toRomanNumeral(index + 1);
+  const controlText = report.exempt ? 'EXEMPT' : `Report Control Symbol ${report.controlSymbol}`;
+  return `${romanNumeral}. ${report.title} (${controlText}), par. ${report.paragraphRef}`;
+};
+
+// Helper function to convert number to Roman numeral
+const toRomanNumeral = (num: number): string => {
+  const romanNumerals: { [key: number]: string } = {
+    1: 'I', 2: 'II', 3: 'III', 4: 'IV', 5: 'V',
+    6: 'VI', 7: 'VII', 8: 'VIII', 9: 'IX', 10: 'X'
+  };
+  return romanNumerals[num] || num.toString();
+};
+
+// Helper function to determine if reports should be inline or separate page
+const shouldReportsBeInline = (reports: ReportData[]): boolean => {
+  return reports.length > 0 && reports.length <= 5;
+};
+
+// Helper function to format Roman numeral with right alignment at the period
+// All periods line up vertically - Roman numerals are RIGHT-aligned
+const formatRomanNumeralAligned = (romanNumeral: string): string => {
+  // Right-align in 4-character width, periods line up at position 4
+  // "I" becomes "   I." (3 spaces + I + period)
+  // "II" becomes "  II." (2 spaces + II + period)  
+  // "III" becomes " III." (1 space + III + period)
+  // "IV" becomes " IV." (1 space + IV + period) - special case
+  let totalWidth = 4; // Width before the period
+  
+  // Special case for Roman numeral IV - use one less space
+  if (romanNumeral === 'IV') {
+    totalWidth = 3;
+  }
+   if (romanNumeral === 'V') {
+    totalWidth = 3;
+  }
+  
+  const padding = totalWidth - romanNumeral.length;
+  return ' '.repeat(Math.max(0, padding)) + romanNumeral + '.';
+};
+
+// Helper function to generate inline reports section with proper line breaking
+const generateInlineReportsSection = (reports: ReportData[], font: string = 'times'): Paragraph[] => {
+  if (!shouldReportsBeInline(reports)) {
+    return [];
+  }
+  
+  const paragraphs: Paragraph[] = [];
+  const isCourier = font.toLowerCase().includes('courier');
+  
+  // Character limits per MCO 5215.1K
+  // Courier: 43 chars with spaces after "Reports Required:  " prefix (19 chars)
+  // Times: 66 chars with spaces after "Reports Required:" + tab
+  const maxLength = isCourier ? 43 : 66;
+  
+  reports.forEach((report, index) => {
+    const romanNumeral = toRomanNumeral(index + 1);
+    const alignedRomanNumeral = formatRomanNumeralAligned(romanNumeral);
+    const controlText = report.exempt ? 'EXEMPT' : `Report Control Symbol ${report.controlSymbol}`;
+    // Don't include Roman numeral in the content to split - handle separately
+    const textContent = `${report.title} (${controlText}), par. ${report.paragraphRef}`;
+    
+    // Split only the text content (without Roman numeral)
+    const reportLines = splitSubject(textContent, maxLength);
+    
+    reportLines.forEach((line, lineIndex) => {
+      if (index === 0 && lineIndex === 0) {
+        // First report, first line - includes "Reports Required:" label
+        if (isCourier) {
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({
+              text: `Reports Required:  ${alignedRomanNumeral} ${line}`,
+              font: font,
+              size: 24
+            })]
+          }));
+        } else {
+          // Times New Roman: First report line - 1.5" indent
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({
+              text: `Reports Required:\t${alignedRomanNumeral} ${line}`,
+              font: font,
+              size: 24
+            })],
+            tabStops: [
+              { type: TabStopType.LEFT, position: 2160 } // 1.5 inch tab for "Reports Required:"
+            ]
+          }));
+        }
+      } else if (lineIndex === 0) {
+        // Subsequent reports, first line - aligned with first report  
+        if (isCourier) {
+          // 19 spaces for "Reports Required:  "
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({
+              text: `                   ${alignedRomanNumeral} ${line}`,
+              font: font,
+              size: 24
+            })]
+          }));
+        } else {
+          // Times New Roman: Subsequent report lines - use same 1.5" tab as first
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({
+              text: `\t${alignedRomanNumeral} ${line}`,
+              font: font,
+              size: 24
+            })],
+            tabStops: [
+              { type: TabStopType.LEFT, position: 2160 } // Same 1.5 inch tab
+            ]
+          }));
+        }
+      } else {
+        // Continuation lines - align with start of text (after Roman numeral + space)
+        if (isCourier) {
+          // 19 (Reports Required:) + 5 (Roman numeral) + 1 (space) = 25 spaces total
+          const totalSpaces = 25;
+          const indentSpaces = ' '.repeat(totalSpaces);
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({
+              text: `${indentSpaces}${line}`,
+              font: font,
+              size: 24
+            })]
+          }));
+        } else {
+          // Times New Roman: Continuation lines - start at 1.75"
+          paragraphs.push(new Paragraph({
+            children: [new TextRun({
+              text: `\t\t${line}`,
+              font: font,
+              size: 24
+            })],
+            tabStops: [
+              { type: TabStopType.LEFT, position: 2160 }, // First tab (Reports Required at 1.5")
+              { type: TabStopType.LEFT, position: 2520 }  // Second tab at 1.75" (1.75 * 1440 = 2520 twips)
+            ]
+          }));
+        }
+      }
+    });
+  });
+  
+  return paragraphs;
+};
+
+// Helper function to generate separate page reference
+const generateReportsPageReference = (reports: ReportData[], font: string = 'times'): Paragraph | null => {
+  if (shouldReportsBeInline(reports)) {
+    return null;
+  }
+  
+  const isCourier = font.toLowerCase().includes('courier');
+  
+  if (isCourier) {
+    return new Paragraph({
+      children: [new TextRun({
+        text: 'Reports Required:  See Enclosure (2)',
+        font: font,
+        size: 24
+      })]
+    });
+  } else {
+    return new Paragraph({
+      children: [new TextRun({
+        text: 'Reports Required:\tSee Enclosure (2)',
+        font: font,
+        size: 24
+      })],
+      tabStops: [
+        { type: TabStopType.LEFT, position: 1440 }
+      ]
+    });
+  }
+};
+
+// Helper function to generate reports table page (for 5+ reports)
+const generateReportsTablePage = (reports: ReportData[], font: string = 'times'): Paragraph[] => {
+  if (shouldReportsBeInline(reports)) {
+    return [];
+  }
+  
+  const paragraphs: Paragraph[] = [];
+  
+  // Page title
+  paragraphs.push(new Paragraph({
+    children: [new TextRun({
+      text: 'Reports Required',
+      font: font,
+      size: 24,
+      bold: true,
+      allCaps: true
+    })],
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 240 }
+  }));
+  
+  // Table would be generated here using docx Table API
+  // This is a placeholder for the table generation
+  
+  return paragraphs;
+};
+
+// Main function - delegates to appropriate helper
+const generateReportsRequiredSection = (
+  reports: ReportData[], 
+  font: string = 'times'
+): { inline: Paragraph[], reference: Paragraph | null, tablePage: Paragraph[] } => {
+  
+  if (!reports || reports.length === 0) {
+    return { inline: [], reference: null, tablePage: [] };
+  }
+  
+  return {
+    inline: generateInlineReportsSection(reports, font),
+    reference: generateReportsPageReference(reports, font),
+    tablePage: generateReportsTablePage(reports, font)
+  };
+};
+
+// ==========================================
+// END REPORTS REQUIRED - HELPER FUNCTIONS
+// ==========================================
+
 interface DocumentHeader {
   ssic_code: string;
   sponsor_code: string;
@@ -367,6 +607,7 @@ interface DocumentHeader {
   revision_suffix?: string;
   designationLine?: string;
 }
+
 
 interface ParagraphData {
   id: number;
@@ -1591,7 +1832,8 @@ export default function MarineCorpsDirectivesFormatter() {
   const [showRef, setShowRef] = useState(false);
   const [showEncl, setShowEncl] = useState(false);
   const [showDelegation, setShowDelegation] = useState(false);
-
+  const [showReports, setShowReports] = useState(false);
+  const [reports, setReports] = useState<ReportData[]>([]);
   const [distribution, setDistribution] = useState<DistributionEntry[]>([]);
   const [showDistribution, setShowDistribution] = useState(false);
 
@@ -2528,7 +2770,7 @@ const formatDistributionStatement = (distributionStatement: FormData['distributi
 const generateBasicLetter = async () => {
   try {
     // Use local base64 DoD seal
-    const sealImageRun = await createDoDSeal();
+    const sealImageRun = await createDoDSeal(formData.letterheadType);
 
     const content = [];
     
@@ -2878,6 +3120,22 @@ if (enclosures && enclosures.length > 0) {
     content.push(new Paragraph({ text: "" }));
   }
 }
+
+    // Reports Required section
+    if (reports && reports.length > 0 && showReports) {
+      const reportsResult = generateReportsRequiredSection(reports, bodyFont);
+      
+      // If 1-4 reports: add inline format
+      if (reportsResult.inline.length > 0) {
+        content.push(...reportsResult.inline);
+        content.push(new Paragraph({ text: "" }));
+      } 
+      // If 5+ reports: add reference to separate page
+      else if (reportsResult.reference) {
+        content.push(reportsResult.reference);
+        content.push(new Paragraph({ text: "" }));
+      }
+    }
     
     // Add spacing before paragraphs if we have references but no enclosures
     const hasReferences = references && references.length > 0 && references.some(ref => ref.trim());
@@ -3649,300 +3907,300 @@ const clearParagraphContent = (paragraphId: number) => {
             margin-left: 10px;
         }
         
-@media (max-width: 768px) {
-  /* Container adjustments */
-  .main-container {
-    margin: 10px !important;
-    padding: 15px !important;
-  }
+        @media (max-width: 768px) {
+          /* Container adjustments */
+          .main-container {
+            margin: 10px !important;
+            padding: 15px !important;
+          }
 
-  /* Title adjustments */
-  .main-title {
-    font-size: 1.75rem !important;
-  }
+          /* Title adjustments */
+          .main-title {
+            font-size: 1.75rem !important;
+          }
 
-  /* Section spacing */
-  .form-section {
-    padding: 15px !important;
-    margin-bottom: 20px !important;
-  }
+          /* Section spacing */
+          .form-section {
+            padding: 15px !important;
+            margin-bottom: 20px !important;
+          }
 
-  .section-legend {
-    font-size: 0.95rem !important;
-    padding: 10px 15px !important;
-  }
+          .section-legend {
+            font-size: 0.95rem !important;
+            padding: 10px 15px !important;
+          }
 
-  /* Input group - Stack vertically */
-  .input-group {
-    flex-direction: column !important;
-    align-items: stretch !important;
-    box-shadow: none !important;
-  }
+          /* Input group - Stack vertically */
+          .input-group {
+            flex-direction: column !important;
+            align-items: stretch !important;
+            box-shadow: none !important;
+          }
 
-  .input-group-text {
-    min-width: 100% !important;
-    width: 100% !important;
-    border-radius: 8px 8px 0 0 !important;
-    padding: 10px 12px !important;
-    font-size: 0.9rem !important;
-    text-align: left !important;
-  }
+          .input-group-text {
+            min-width: 100% !important;
+            width: 100% !important;
+            border-radius: 8px 8px 0 0 !important;
+            padding: 10px 12px !important;
+            font-size: 0.9rem !important;
+            text-align: left !important;
+          }
 
-  .form-control {
-    border-radius: 0 0 8px 8px !important;
-    min-height: 44px !important;
-    font-size: 16px !important;
-  }
+          .form-control {
+            border-radius: 0 0 8px 8px !important;
+            min-height: 44px !important;
+            font-size: 16px !important;
+          }
 
-  /* Radio group - Stack vertically */
-  .radio-group {
-    flex-direction: column !important;
-    gap: 10px !important;
-  }
+          /* Radio group - Stack vertically */
+          .radio-group {
+            flex-direction: column !important;
+            gap: 10px !important;
+          }
 
-  /* Button adjustments */
-  .btn {
-    font-size: 0.85rem !important;
-    padding: 10px 16px !important;
-    white-space: normal !important;
-    min-height: 44px !important;
-  }
+          /* Button adjustments */
+          .btn {
+            font-size: 0.85rem !important;
+            padding: 10px 16px !important;
+            white-space: normal !important;
+            min-height: 44px !important;
+          }
 
-  .generate-btn {
-    font-size: 1rem !important;
-    padding: 12px 20px !important;
-    min-width: 100% !important;
-  }
+          .generate-btn {
+            font-size: 1rem !important;
+            padding: 12px 20px !important;
+            min-width: 100% !important;
+          }
 
-  /* Paragraph controls - Stack/wrap better */
-  .paragraph-controls {
-    flex-wrap: wrap !important;
-    gap: 8px !important;
-  }
+          /* Paragraph controls - Stack/wrap better */
+          .paragraph-controls {
+            flex-wrap: wrap !important;
+            gap: 8px !important;
+          }
 
-  .paragraph-controls button {
-    flex: 1 1 calc(50% - 4px) !important;
-    min-width: 120px !important;
-    font-size: 0.85rem !important;
-  }
+          .paragraph-controls button {
+            flex: 1 1 calc(50% - 4px) !important;
+            min-width: 120px !important;
+            font-size: 0.85rem !important;
+          }
 
-  /* Paragraph containers - Reduce indentation */
-  .paragraph-container {
-    padding: 12px !important;
-    margin-bottom: 15px !important;
-  }
+          /* Paragraph containers - Reduce indentation */
+          .paragraph-container {
+            padding: 12px !important;
+            margin-bottom: 15px !important;
+          }
 
-  .paragraph-container[data-level="1"] {
-    margin-left: 0px !important;
-  }
+          .paragraph-container[data-level="1"] {
+            margin-left: 0px !important;
+          }
 
-  .paragraph-container[data-level="2"] {
-    margin-left: 15px !important;
-  }
+          .paragraph-container[data-level="2"] {
+            margin-left: 15px !important;
+          }
 
-  .paragraph-container[data-level="3"] {
-    margin-left: 30px !important;
-  }
+          .paragraph-container[data-level="3"] {
+            margin-left: 30px !important;
+          }
 
-  .paragraph-container[data-level="4"] {
-    margin-left: 45px !important;
-  }
+          .paragraph-container[data-level="4"] {
+            margin-left: 45px !important;
+          }
 
-  .paragraph-container[data-level="5"],
-  .paragraph-container[data-level="6"],
-  .paragraph-container[data-level="7"],
-  .paragraph-container[data-level="8"] {
-    margin-left: 60px !important;
-  }
+          .paragraph-container[data-level="5"],
+          .paragraph-container[data-level="6"],
+          .paragraph-container[data-level="7"],
+          .paragraph-container[data-level="8"] {
+            margin-left: 60px !important;
+          }
 
-  /* Paragraph item adjustments */
-  .paragraph-item {
-    padding: 12px !important;
-  }
+          /* Paragraph item adjustments */
+          .paragraph-item {
+            padding: 12px !important;
+          }
 
-  /* Smart paragraph buttons */
-  .btn-smart-main,
-  .btn-smart-sub,
-  .btn-smart-same,
-  .btn-smart-up {
-    font-size: 0.75rem !important;
-    padding: 6px 10px !important;
-    margin-right: 4px !important;
-    margin-bottom: 6px !important;
-    min-width: 80px !important;
-  }
+          /* Smart paragraph buttons */
+          .btn-smart-main,
+          .btn-smart-sub,
+          .btn-smart-same,
+          .btn-smart-up {
+            font-size: 0.75rem !important;
+            padding: 6px 10px !important;
+            margin-right: 4px !important;
+            margin-bottom: 6px !important;
+            min-width: 80px !important;
+          }
 
-  /* Document type selector grid */
-  div[style*="gridTemplateColumns"] {
-    grid-template-columns: 1fr !important;
-    gap: 15px !important;
-  }
+          /* Document type selector grid */
+          div[style*="gridTemplateColumns"] {
+            grid-template-columns: 1fr !important;
+            gap: 15px !important;
+          }
 
-  /* Saved letters section */
-  .saved-letter-item {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-    gap: 10px !important;
-  }
+          /* Saved letters section */
+          .saved-letter-item {
+            flex-direction: column !important;
+            align-items: flex-start !important;
+            gap: 10px !important;
+          }
 
-  .saved-letter-actions {
-    width: 100% !important;
-    display: flex !important;
-    gap: 8px !important;
-  }
+          .saved-letter-actions {
+            width: 100% !important;
+            display: flex !important;
+            gap: 8px !important;
+          }
 
-  .saved-letter-actions button {
-    flex: 1 !important;
-    margin-left: 0 !important;
-  }
+          .saved-letter-actions button {
+            flex: 1 !important;
+            margin-left: 0 !important;
+          }
 
-  /* Textarea adjustments */
-  textarea.form-control {
-    min-height: 100px !important;
-    font-size: 16px !important;
-  }
+          /* Textarea adjustments */
+          textarea.form-control {
+            min-height: 100px !important;
+            font-size: 16px !important;
+          }
 
-  /* Validation messages */
-  .validation-summary {
-    padding: 12px !important;
-    font-size: 0.85rem !important;
-  }
+          /* Validation messages */
+          .validation-summary {
+            padding: 12px !important;
+            font-size: 0.85rem !important;
+          }
 
-  .structure-error,
-  .acronym-error {
-    font-size: 0.8rem !important;
-    padding: 8px 10px !important;
-  }
+          .structure-error,
+          .acronym-error {
+            font-size: 0.8rem !important;
+            padding: 8px 10px !important;
+          }
 
-  /* Distribution entries */
-  .distribution-entry {
-    flex-direction: column !important;
-    gap: 10px !important;
-  }
+          /* Distribution entries */
+          .distribution-entry {
+            flex-direction: column !important;
+            gap: 10px !important;
+          }
 
-  /* Reference and enclosure inputs */
-  .reference-input,
-  .enclosure-input {
-    width: 100% !important;
-  }
+          /* Reference and enclosure inputs */
+          .reference-input,
+          .enclosure-input {
+            width: 100% !important;
+          }
 
-  /* Voice input controls */
-  .voice-controls {
-    flex-direction: column !important;
-    gap: 10px !important;
-  }
+          /* Voice input controls */
+          .voice-controls {
+            flex-direction: column !important;
+            gap: 10px !important;
+          }
 
-  .voice-controls button {
-    width: 100% !important;
-  }
+          .voice-controls button {
+            width: 100% !important;
+          }
 
-  /* Tab stops and indentation helpers */
-  .paragraph-level-badge {
-    font-size: 0.7rem !important;
-    padding: 3px 6px !important;
-  }
+          /* Tab stops and indentation helpers */
+          .paragraph-level-badge {
+            font-size: 0.7rem !important;
+            padding: 3px 6px !important;
+          }
 
-  .paragraph-number-preview {
-    font-size: 0.95rem !important;
-  }
+          .paragraph-number-preview {
+            font-size: 0.95rem !important;
+          }
 
-  /* Header text on cards */
-  h1, h2, h3, h4 {
-    font-size: calc(100% - 0.2rem) !important;
-  }
+          /* Header text on cards */
+          h1, h2, h3, h4 {
+            font-size: calc(100% - 0.2rem) !important;
+          }
 
-  /* Combobox dropdowns */
-  .combobox-trigger {
-    font-size: 0.9rem !important;
-  }
+          /* Combobox dropdowns */
+          .combobox-trigger {
+            font-size: 0.9rem !important;
+          }
 
-  /* Icon spacing */
-  i[class*="fa-"] {
-    margin-right: 6px !important;
-  }
+          /* Icon spacing */
+          i[class*="fa-"] {
+            margin-right: 6px !important;
+          }
 
-  /* Modal/dialog adjustments if present */
-  .modal-content,
-  .dialog-content {
-    width: 95vw !important;
-    max-width: 95vw !important;
-    margin: 10px !important;
-  }
+          /* Modal/dialog adjustments if present */
+          .modal-content,
+          .dialog-content {
+            width: 95vw !important;
+            max-width: 95vw !important;
+            margin: 10px !important;
+          }
 
-  /* Prevent horizontal scroll */
-  body {
-    overflow-x: hidden !important;
-  }
+          /* Prevent horizontal scroll */
+          body {
+            overflow-x: hidden !important;
+          }
 
-  .main-container,
-  .form-section,
-  .input-group {
-    max-width: 100% !important;
-    overflow-x: hidden !important;
-  }
+          .main-container,
+          .form-section,
+          .input-group {
+            max-width: 100% !important;
+            overflow-x: hidden !important;
+          }
 
-  /* Touch target sizes (minimum 44x44px) */
-  button,
-  input,
-  select,
-  textarea,
-  a {
-    min-height: 44px !important;
-  }
+          /* Touch target sizes (minimum 44x44px) */
+          button,
+          input,
+          select,
+          textarea,
+          a {
+            min-height: 44px !important;
+          }
 
-  /* Reduce margins for better space usage */
-  .mb-4 {
-    margin-bottom: 1rem !important;
-  }
+          /* Reduce margins for better space usage */
+          .mb-4 {
+            margin-bottom: 1rem !important;
+          }
 
-  .mt-4 {
-    margin-top: 1rem !important;
-  }
-}
+          .mt-4 {
+            margin-top: 1rem !important;
+          }
+        }
 
-/* Extra small devices (phones in portrait, less than 576px) */
-@media (max-width: 576px) {
-  .main-container {
-    margin: 5px !important;
-    padding: 10px !important;
-    border-radius: 15px !important;
-  }
+        /* Extra small devices (phones in portrait, less than 576px) */
+        @media (max-width: 576px) {
+          .main-container {
+            margin: 5px !important;
+            padding: 10px !important;
+            border-radius: 15px !important;
+          }
 
-  .main-title {
-    font-size: 1.5rem !important;
-  }
+          .main-title {
+            font-size: 1.5rem !important;
+          }
 
-  .section-legend {
-    font-size: 0.85rem !important;
-    padding: 8px 12px !important;
-  }
+          .section-legend {
+            font-size: 0.85rem !important;
+            padding: 8px 12px !important;
+          }
 
-  .btn {
-    font-size: 0.8rem !important;
-    padding: 8px 12px !important;
-  }
+          .btn {
+            font-size: 0.8rem !important;
+            padding: 8px 12px !important;
+          }
 
-  .paragraph-controls button {
-    flex: 1 1 100% !important;
-    min-width: 100% !important;
-  }
+          .paragraph-controls button {
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+          }
 
-  /* Stack all paragraph control buttons vertically on very small screens */
-  .btn-smart-main,
-  .btn-smart-sub,
-  .btn-smart-same,
-  .btn-smart-up {
-    width: 100% !important;
-    margin-right: 0 !important;
-  }
-}
+          /* Stack all paragraph control buttons vertically on very small screens */
+          .btn-smart-main,
+          .btn-smart-sub,
+          .btn-smart-same,
+          .btn-smart-up {
+            width: 100% !important;
+            margin-right: 0 !important;
+          }
+        }
 
-/* Tablet/Medium devices (576px to 768px) */
-@media (min-width: 576px) and (max-width: 768px) {
-  .paragraph-controls button {
-    flex: 1 1 calc(33.333% - 6px) !important;
-  }
-}
+        /* Tablet/Medium devices (576px to 768px) */
+        @media (min-width: 576px) and (max-width: 768px) {
+          .paragraph-controls button {
+            flex: 1 1 calc(33.333% - 6px) !important;
+          }
+        }
       `}</style>
 
       <div className="marine-gradient-bg">
@@ -5020,6 +5278,257 @@ const clearParagraphContent = (paragraphId: number) => {
                   </div>
                 )}
             </Card>
+
+           
+            {/* Reports Required Card */}
+            <Card style={{ marginBottom: '1.5rem' }}>
+              <CardHeader>
+                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
+                  <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
+                  Reports Required
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="radio-group">
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="ifReports"
+                      value="yes"
+                      checked={showReports}
+                      onChange={() => setShowReports(true)}
+                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>Yes</span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                      type="radio"
+                      name="ifReports"
+                      value="no"
+                      checked={!showReports}
+                      onChange={() => { setShowReports(false); setReports([]); }}
+                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
+                    />
+                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>No</span>
+                  </label>
+              </CardContent>
+
+              {showReports && (
+                <>
+                  <div className="dynamic-section">
+                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
+                      <i className="fas fa-clipboard-list" style={{ marginRight: '8px' }}></i>
+                      Reports Required:
+                    </label>
+                    
+                    {reports.map((report, index) => (
+                      <div key={report.id} style={{ 
+                        padding: '1rem', 
+                        border: '2px solid #e5e7eb', 
+                        marginBottom: '1rem',
+                        borderRadius: '8px',
+                        backgroundColor: '#fafafa'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                          <strong style={{ fontSize: '1.1rem', color: '#1f2937' }}>
+                            <i className="fas fa-file" style={{ marginRight: '8px', color: '#6366f1' }}></i>
+                            Report {toRomanNumeral(index + 1)}
+                          </strong>
+                          <button 
+                            onClick={() => {
+                              setReports(reports.filter((_, i) => i !== index));
+                            }}
+                            style={{ 
+                              color: '#dc2626', 
+                              background: 'none', 
+                              border: 'none', 
+                              cursor: 'pointer',
+                              fontSize: '1.1rem',
+                              padding: '4px 8px'
+                            }}
+                            title="Remove report"
+                          >
+                            <i className="fas fa-trash"></i>
+                          </button>
+                        </div>
+                        
+                        <div className="input-group" style={{ marginBottom: '0.75rem' }}>
+                          <span className="input-group-text" style={{ 
+                            backgroundColor: '#6366f1',
+                            color: 'white',
+                            fontWeight: 'bold',
+                            borderColor: '#6366f1',
+                            minWidth: '140px'
+                          }}>
+                            <i className="fas fa-heading" style={{ marginRight: '8px' }}></i>
+                            Report Title:
+                          </span>
+                          <input 
+                            className="form-control"
+                            type="text"
+                            value={report.title}
+                            onChange={(e) => {
+                              const updated = [...reports];
+                              updated[index] = { ...updated[index], title: e.target.value };
+                              setReports(updated);
+                            }}
+                            placeholder="e.g., Quarterly Manpower Update"
+                          />
+                        </div>
+                        
+                        <div className="input-group" style={{ marginBottom: '0.75rem' }}>
+                          <span className="input-group-text" style={{ 
+                            backgroundColor: '#8b5cf6',
+                            color: 'white',
+                            fontWeight: 'bold',
+                            borderColor: '#8b5cf6',
+                            minWidth: '140px'
+                          }}>
+                            <i className="fas fa-barcode" style={{ marginRight: '8px' }}></i>
+                            Control Symbol:
+                          </span>
+                          <input 
+                            className="form-control"
+                            type="text"
+                            value={report.controlSymbol}
+                            onChange={(e) => {
+                              const updated = [...reports];
+                              updated[index] = { ...updated[index], controlSymbol: e.target.value.toUpperCase() };
+                              setReports(updated);
+                            }}
+                            placeholder="e.g., MC-5215-01"
+                            disabled={report.exempt}
+                            style={{
+                              backgroundColor: report.exempt ? '#f3f4f6' : 'white'
+                            }}
+                          />
+                        </div>
+                        
+                        <div className="input-group" style={{ marginBottom: '0.75rem' }}>
+                          <span className="input-group-text" style={{ 
+                            backgroundColor: '#ec4899',
+                            color: 'white',
+                            fontWeight: 'bold',
+                            borderColor: '#ec4899',
+                            minWidth: '140px'
+                          }}>
+                            <i className="fas fa-paragraph" style={{ marginRight: '8px' }}></i>
+                            Paragraph Ref:
+                          </span>
+                          <input 
+                            className="form-control"
+                            type="text"
+                            value={report.paragraphRef}
+                            onChange={(e) => {
+                              const updated = [...reports];
+                              updated[index] = { ...updated[index], paragraphRef: e.target.value };
+                              setReports(updated);
+                            }}
+                            placeholder="e.g., 3b or encl. (1)"
+                          />
+                        </div>
+                        
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                            <input 
+                              type="checkbox"
+                              checked={report.exempt || false}
+                              onChange={(e) => {
+                                const updated = [...reports];
+                                updated[index] = { 
+                                  ...updated[index], 
+                                  exempt: e.target.checked,
+                                  controlSymbol: e.target.checked ? '' : updated[index].controlSymbol
+                                };
+                                setReports(updated);
+                              }}
+                              style={{ marginRight: '8px', transform: 'scale(1.2)', cursor: 'pointer' }}
+                            />
+                            <span style={{ fontSize: '0.95rem', fontWeight: '600' }}>
+                              <i className="fas fa-ban" style={{ marginRight: '6px', color: '#dc2626' }}></i>
+                              Mark as EXEMPT (no control symbol required)
+                            </span>
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    <button 
+                      onClick={() => {
+                        const newReport: ReportData = {
+                          id: `report-${Date.now()}`,
+                          title: '',
+                          controlSymbol: '',
+                          paragraphRef: '',
+                          exempt: false
+                        };
+                        setReports([...reports, newReport]);
+                      }}
+                      style={{ 
+                        padding: '0.75rem 1.5rem', 
+                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', 
+                        color: 'white', 
+                        border: 'none',
+                        borderRadius: '8px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        fontSize: '1rem',
+                        transition: 'all 0.3s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.target as HTMLButtonElement).style.transform = 'translateY(-2px)';
+                        (e.target as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)';
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLButtonElement).style.transform = 'translateY(0)';
+                        (e.target as HTMLButtonElement).style.boxShadow = 'none';
+                      }}
+                    >
+                      <i className="fas fa-plus" style={{ marginRight: '8px' }}></i>
+                      Add Report
+                    </button>
+                    
+                    {/* Preview Section */}
+                    {reports.length > 0 && (
+                      <div style={{ 
+                        marginTop: '1.5rem', 
+                        padding: '1rem', 
+                        background: 'linear-gradient(135deg, #f0f9ff, #e0f2fe)',
+                        borderRadius: '8px',
+                        border: '2px solid #3b82f6'
+                      }}>
+                        <strong style={{ display: 'block', marginBottom: '0.75rem', fontSize: '1.1rem', color: '#1e40af' }}>
+                          <i className="fas fa-eye" style={{ marginRight: '8px' }}></i>
+                          Preview:
+                        </strong>
+                        {shouldReportsBeInline(reports) ? (
+                          <div style={{ fontFamily: 'monospace', fontSize: '0.95rem', lineHeight: '1.6' }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Reports Required:</div>
+                            {reports.map((report, index) => (
+                              <div key={report.id} style={{ marginLeft: '2rem', marginBottom: '0.25rem' }}>
+                                {formatReportLine(report, index)}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div>
+                            <div style={{ color: '#dc2626', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                              <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
+                              Reports Required: See Enclosure (2)
+                            </div>
+                            <div style={{ fontSize: '0.875rem', color: '#6b7280', fontStyle: 'italic' }}>
+                              (6+ reports will generate a separate "Reports Required" page with a table)
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </Card>
+
+          </div>
           </div>
 
           {/* Body Paragraphs Section */}
@@ -5584,7 +6093,7 @@ const clearParagraphContent = (paragraphId: number) => {
                 </div>
               )}
             </div>
-{/* ADD THIS ENTIRE PCN/COPY TO SECTION HERE */}
+            {/* ADD THIS ENTIRE PCN/COPY TO SECTION HERE */}
             <Card style={{ marginBottom: '1.5rem' }}>
               <CardHeader>
                 <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
@@ -5896,7 +6405,6 @@ const clearParagraphContent = (paragraphId: number) => {
             </p>
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
+     </div>
+    );
+  }
