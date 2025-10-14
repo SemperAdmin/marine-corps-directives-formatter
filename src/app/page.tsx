@@ -2409,6 +2409,7 @@ const validateDirectiveReference = (formData: FormData): string[] => {
       case 'sub': newLevel = Math.min(currentParagraph.level + 1, 8); break;
       case 'up': newLevel = Math.max(currentParagraph.level - 1, 1); break;
     }
+
     
     const newId = (paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) : 0) + 1;
     const currentIndex = paragraphs.findIndex(p => p.id === afterId);
@@ -2444,7 +2445,51 @@ const validateDirectiveReference = (formData: FormData): string[] => {
     setParagraphs(prev => prev.filter(p => p.id !== id));
   };
 
+const addRecordsManagementParagraph = () => {
+    const adminLogisticsIndex = paragraphs.findIndex(p => p.title === 'Administration and Logistics');
+    if (adminLogisticsIndex === -1) {
+      alert('Cannot add Records Management: Administration and Logistics paragraph not found');
+      return;
+    }
+    const newId = (paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) : 0) + 1;
+    const newParagraph: ParagraphData = {
+      id: newId,
+      level: 2,
+      content: 'Records created as a result of this Order shall be managed in accordance with SECNAV M-5210.1, Department of the Navy Records Management Program, and disposed of IAW SSIC 5210.',
+      title: 'Records Management',
+      isMandatory: false
+    };
+    let insertIndex = adminLogisticsIndex + 1;
+    while (insertIndex < paragraphs.length && paragraphs[insertIndex].level === 2) {
+      insertIndex++;
+    }
+    const newParagraphs = [...paragraphs];
+    newParagraphs.splice(insertIndex, 0, newParagraph);
+    setParagraphs(newParagraphs);
+  };
 
+  const addPrivacyActParagraph = () => {
+    const adminLogisticsIndex = paragraphs.findIndex(p => p.title === 'Administration and Logistics');
+    if (adminLogisticsIndex === -1) {
+      alert('Cannot add Privacy Act: Administration and Logistics paragraph not found');
+      return;
+    }
+    const newId = (paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) : 0) + 1;
+    const newParagraph: ParagraphData = {
+      id: newId,
+      level: 2,
+      content: 'Any misuse or unauthorized disclosure of Personally Identifiable Information (PII) may result in criminal and/or civil penalties (5 U.S.C. § 552a).',
+      title: 'Privacy Act',
+      isMandatory: false
+    };
+    let insertIndex = adminLogisticsIndex + 1;
+    while (insertIndex < paragraphs.length && paragraphs[insertIndex].level === 2) {
+      insertIndex++;
+    }
+    const newParagraphs = [...paragraphs];
+    newParagraphs.splice(insertIndex, 0, newParagraph);
+    setParagraphs(newParagraphs);
+  };
 const handleUnderlineText = (paragraphId: number, textarea: HTMLTextAreaElement) => {
   if (!textarea) return;
   
@@ -2742,7 +2787,70 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
     return errors;
   }, []);
 
+/**
+ * Creates a properly formatted subsection paragraph for Word export
+ * Used for Records Management and Privacy Act sections
+ */
+const createSubsectionParagraph = (
+  letter: string,
+  title: string,
+  content: string,
+  bodyFont: string
+): Paragraph => {
+  // Parse content for underlined text using <u></u> tags
+  const contentParts = content.split(/(<u>.*?<\/u>)/g);
+  const contentRuns: TextRun[] = [];
+  
+  contentParts.forEach(part => {
+    if (part.startsWith('<u>') && part.endsWith('</u>')) {
+      // Extract text between <u> tags and make it underlined
+      const underlinedText = part.slice(3, -4);
+      contentRuns.push(new TextRun({ 
+        text: underlinedText, 
+        font: bodyFont, 
+        size: 24, 
+        underline: {} 
+      }));
+    } else if (part) {
+      // Regular text
+      contentRuns.push(new TextRun({ 
+        text: part, 
+        font: bodyFont, 
+        size: 24 
+      }));
+    }
+  });
 
+  // Return formatted paragraph with proper indentation
+  return new Paragraph({
+    children: [
+      new TextRun({ text: '\t' }), // First tab for level 2 indent
+      new TextRun({ 
+        text: `${letter}.`, 
+        font: bodyFont, 
+        size: 24 
+      }),
+      new TextRun({ text: '\t', font: bodyFont, size: 24 }), // Second tab before content
+      new TextRun({ 
+        text: title, 
+        font: bodyFont, 
+        size: 24, 
+        underline: {} // Title is underlined
+      }),
+      new TextRun({ 
+        text: '. ', 
+        font: bodyFont, 
+        size: 24 
+      }),
+      ...contentRuns // Spread the content runs
+    ],
+    tabStops: [
+      { type: TabStopType.LEFT, position: 720 },   // 0.5 inch - citation position
+      { type: TabStopType.LEFT, position: 1440 }   // 1.0 inch - text position
+    ],
+    alignment: AlignmentType.LEFT
+  });
+};
 const formatDistributionStatement = (distributionStatement: FormData['distributionStatement']): string => {
   const statement = DISTRIBUTION_STATEMENTS[distributionStatement.code];
   if (!statement) return '';
@@ -5836,6 +5944,8 @@ const clearParagraphContent = (paragraphId: number) => {
                     )}
                     {/* END OF ADDED CODE */}
                     
+              
+
                     {/* Voice Input and Underline buttons */}
                     <div style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
                       {/* Voice Input Button */}
