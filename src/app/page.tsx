@@ -66,59 +66,82 @@ const estimateTextWidth = (text: string): number => {
   return text.trim().length * avgCharWidthTwips; 
 }; 
 
+
 /** 
- * Calculate the starting position so the longest text ends near the right margin 
+ * Calculate the starting position with font support
+ * Delegates to precise positioning function
  */ 
 const calculateAlignmentPosition = ( 
   ssic: string, 
-  originatorCode: string, 
+  originatorCode: string,
   date: string, 
+  font: string = 'times',
   pageWidth: number = 12240, // 8.5 inches in twips  
   rightMargin: number = 1440   // 1 inch right margin 
 ): number => { 
-  // Clean the texts 
-  const texts = [ 
-    ssic || "", 
-    originatorCode || "", 
-    date || "" 
-  ].filter(text => text.trim()).map(text => text.trim()); 
-  
-  if (texts.length === 0) { 
-    return 8280; // Default to 5.75 inches if no content 
-  } 
-  
-  // Find the longest text by character count (simpler and more reliable) 
-  const longestText = texts.reduce((longest, current) => 
-    current.length > longest.length ? current : longest, ""); 
-  
-  // Estimate width of longest text 
-  const longestWidth = estimateTextWidth(longestText); 
-  
-  // Calculate where text should start so it ends at right margin 
-  const rightBoundary = pageWidth - rightMargin; // 10800 twips (7.5 inches from left) 
-  const startPosition = rightBoundary - longestWidth; 
-  
-  // Don't go too far left - minimum 4 inches from left margin 
-  const minPosition = 5760; // 4 inches * 1440 twips/inch 
-  const finalPosition = Math.max(startPosition, minPosition); 
-  
-  // Debug info 
-  console.log('=== SSIC Alignment Debug ==='); 
-  console.log(`Longest text: "${longestText}" (${longestText.length} chars)`); 
-  console.log(`Estimated width: ${longestWidth} twips (${(longestWidth/1440).toFixed(2)} inches)`); 
-  console.log(`Right boundary: ${rightBoundary} twips (${(rightBoundary/1440).toFixed(2)} inches)`); 
-  console.log(`Calculated start: ${startPosition} twips (${(startPosition/1440).toFixed(2)} inches)`); 
-  console.log(`Final position: ${finalPosition} twips (${(finalPosition/1440).toFixed(2)} inches)`); 
-  console.log('============================'); 
-  
-  return finalPosition; 
-}; 
+  // Delegate to the simpler, font-aware positioning function
+  return calculateSimplePosition(ssic, originatorCode, date, font);
+};
 
-// Even simpler alternative - use fixed position based on typical content 
+
+  
+const getPreciseAlignmentPosition = (maxCharLength: number, font: string = 'times'): number => {
+  // Convert inches to twips (1 inch = 1440 twips)
+  // Courier New is wider (monospaced), so needs more left shift
+  
+  const isCourier = font.toLowerCase().includes('courier');
+  
+  if (isCourier) {
+    // Courier New positioning - shifted 0.5 inch right
+    if (maxCharLength >= 23) {
+      return 5184; // 3.6 inches (was 3.1)
+    } else if (maxCharLength >= 21) {
+      return 5472; // 3.8 inches (was 3.3)
+    } else if (maxCharLength >= 19) {
+      return 5760; // 4.0 inches (was 3.5)
+    } else if (maxCharLength >= 17) {
+      return 6048; // 4.2 inches (was 3.7)
+    } else if (maxCharLength >= 15) {
+      return 6336; // 4.4 inches (was 3.9)
+    } else if (maxCharLength >= 13) {
+      return 6624; // 4.6 inches (was 4.1)
+    } else if (maxCharLength >= 11) {
+      return 6912; // 4.8 inches (was 4.3)
+    } else if (maxCharLength >= 9) {
+      return 7200; // 5.0 inches (was 4.5)
+    } else {
+      return 7488; // 5.2 inches (was 4.7)
+    }
+  } else {
+    // Times New Roman positioning (original)
+    if (maxCharLength >= 23) {
+      return 6480; // 4.5 inches - for longest content (23+ chars)
+    } else if (maxCharLength >= 21) {
+      return 6624; // 4.6 inches - for 21-22 chars
+    } else if (maxCharLength >= 19) {
+      return 6768; // 4.7 inches - for 19-20 chars 
+    } else if (maxCharLength >= 17) {
+      return 6912; // 4.8 inches - for 17-18 chars
+    } else if (maxCharLength >= 15) {
+      return 7056; // 4.9 inches - for 15-16 chars
+    } else if (maxCharLength >= 13) {
+      return 7200; // 5.0 inches - for 13-14 chars
+    } else if (maxCharLength >= 11) {
+      return 7344; // 5.1 inches - for 11-12 chars
+    } else if (maxCharLength >= 9) {
+      return 7488; // 5.2 inches - for 9-10 chars
+    } else {
+      return 7632; // 5.3 inches - for shorter content (< 9 chars)
+    }
+  }
+};
+
+// Use precise positioning that accounts for font type
 const calculateSimplePosition = ( 
   ssic: string, 
   originatorCode: string, 
-  date: string 
+  date: string,
+  font: string = 'times'
 ): number => { 
   // Get the character count of longest text 
   const texts = [ssic || "", originatorCode || "", date || ""] 
@@ -129,48 +152,14 @@ const calculateSimplePosition = (
   
   const maxLength = Math.max(...texts.map(text => text.length)); 
   
-  // Position based on content length: 
-  // Short content (< 15 chars): start at 5.75 inches 
-  // Medium content (15-25 chars): start at 5.25 inches  
-  // Long content (> 25 chars): start at 4.75 inches 
-  
-  if (maxLength <= 15) { 
-    return 8280; // 5.75 inches 
-  } else if (maxLength <= 25) { 
-    return 7560; // 5.25 inches 
-  } else { 
-    return 6840; // 4.75 inches 
-  } 
-};
-
-const getPreciseAlignmentPosition = (maxCharLength: number): number => {
-  // Convert inches to twips (1 inch = 1440 twips)
-  
-  if (maxCharLength >= 23) {
-    return 6480; // 4.5 inches - for longest content (23+ chars)
-  } else if (maxCharLength >= 21) {
-    return 6624; // 4.6 inches - for 21-22 chars
-  } else if (maxCharLength >= 19) {
-    return 6768; // 4.7 inches - for 19-20 chars 
-  } else if (maxCharLength >= 17) {
-    return 6912; // 4.8 inches - for 17-18 chars
-  } else if (maxCharLength >= 15) {
-    return 7056; // 4.9 inches - for 15-16 chars
-  } else if (maxCharLength >= 13) {
-    return 7200; // 5.0 inches - for 13-14 chars
-  } else if (maxCharLength >= 11) {
-    return 7344; // 5.1 inches - for 11-12 chars
-  } else if (maxCharLength >= 9) {
-    return 7488; // 5.2 inches - for 9-10 chars
-  } else {
-    return 7632; // 5.3 inches - for shorter content (< 9 chars)
-  }
+  // Delegate to the precise positioning function that handles fonts properly
+  return getPreciseAlignmentPosition(maxLength, font);
 };
 
 // Add a helper function for header alignment (add this near the other alignment functions)
-const getHeaderAlignmentPosition = (ssic: string, date: string): number => {
+const getHeaderAlignmentPosition = (ssic: string, date: string, font: string = 'times'): number => {
   const maxLength = Math.max(ssic.length, date.length);
-  return getPreciseAlignmentPosition(maxLength);
+  return getPreciseAlignmentPosition(maxLength, font);
 };
 
 // Helper function to format MCBul cancellation date
@@ -189,15 +178,19 @@ const formatCancellationDate = (date: string): string => {
   }
 };
 
-// Helper function to get cancellation line position (positioned at 4.5 inches from left)
-const getCancellationLinePosition = (ssic: string, date: string): number => {
-  // Position cancellation line at exactly 4.5 inches from left margin
-  return 6480; // 4.5 inches * 1440 twips/inch = 6480 twips
+// Helper function to get cancellation line position (positioned in upper right, same as SSIC)
+const getCancellationLinePosition = (cancText: string, font: string = 'times'): number => {
+  // Position cancellation line consistently with header block
+  // Cancellation text examples: "Canc frp: Oct 2004" (~17 chars) or "Canc: Oct 2004" (~14 chars)
+  const textLength = cancText.length;
+  
+  // Delegate to precise positioning that handles fonts properly
+  return getPreciseAlignmentPosition(textLength, font);
 };
 
 // Helper function to get MCBul-specific paragraphs
-const getMCBulParagraphs = (): ParagraphData[] => {
-  return [
+const getMCBulParagraphs = (isContingent: boolean = false): ParagraphData[] => {
+  const baseParagraphs = [
     {
       id: 1,
       level: 1,
@@ -234,6 +227,19 @@ const getMCBulParagraphs = (): ParagraphData[] => {
       title: 'Reserve Applicability'
     }
   ];
+  
+  // Add Cancellation Contingency paragraph if contingent type
+  if (isContingent) {
+    baseParagraphs.push({
+      id: 6,
+      level: 1,
+      content: '',
+      isMandatory: true,
+      title: 'Cancellation Contingency'
+    });
+  }
+  
+  return baseParagraphs;
 };
 
 const getMCOParagraphs = (): ParagraphData[] => {
@@ -1817,6 +1823,44 @@ useEffect(() => {
     }
   }, [formData.documentType]); // Only depend on documentType
 
+  // Handle Cancellation Contingency paragraph for MCBul
+  useEffect(() => {
+    if (formData.documentType === 'mcbul') {
+      const needsContingencyPara = formData.cancellationType === 'contingent';
+      const hasContingencyPara = paragraphs.some(p => p.title === 'Cancellation Contingency');
+      
+      if (needsContingencyPara && !hasContingencyPara) {
+        // Add Cancellation Contingency as the last paragraph
+        const newParagraph: ParagraphData = {
+          id: paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) + 1 : 1,
+          level: 1,
+          content: formData.cancellationContingency || '',
+          isMandatory: true,
+          title: 'Cancellation Contingency'
+        };
+        
+        const newParagraphs = [...paragraphs, newParagraph];
+        setParagraphs(newParagraphs);
+        setParagraphCounter(prev => prev + 1);
+        setFormData(prev => ({ ...prev, paragraphs: newParagraphs }));
+      } else if (!needsContingencyPara && hasContingencyPara) {
+        // Remove Cancellation Contingency paragraph
+        const filteredParagraphs = paragraphs.filter(p => p.title !== 'Cancellation Contingency');
+        setParagraphs(filteredParagraphs);
+        setFormData(prev => ({ ...prev, paragraphs: filteredParagraphs }));
+      } else if (needsContingencyPara && hasContingencyPara && formData.cancellationContingency) {
+        // Update existing Cancellation Contingency paragraph content
+        const updatedParagraphs = paragraphs.map(p => 
+          p.title === 'Cancellation Contingency' 
+            ? { ...p, content: formData.cancellationContingency || '' }
+            : p
+        );
+        setParagraphs(updatedParagraphs);
+        setFormData(prev => ({ ...prev, paragraphs: updatedParagraphs }));
+      }
+    }
+  }, [formData.documentType, formData.cancellationType, formData.cancellationContingency]);
+
   const saveLetter = () => {
     const newLetter: SavedLetter = {
       ...formData,
@@ -2590,17 +2634,19 @@ const generateBasicLetter = async () => {
 
     // MCBul Cancellation Date (positioned two spaces above SSIC)
     if (formData.documentType === 'mcbul' && formData.cancellationDate && formData.cancellationType) {
+      const cancText = formData.cancellationType === 'contingent' 
+        ? `Canc frp: ${formatCancellationDate(formData.cancellationDate)}`
+        : `Canc: ${formatCancellationDate(formData.cancellationDate)}`;
+        
       content.push(new Paragraph({
         children: [new TextRun({
-          text: formData.cancellationType === 'contingent' 
-            ? `Canc frp: ${formatCancellationDate(formData.cancellationDate)}`
-            : `Canc: ${formatCancellationDate(formData.cancellationDate)}`,
+          text: cancText,
           font: bodyFont,
           size: 24
         })],
         alignment: AlignmentType.LEFT,
         indent: {
-          left: getCancellationLinePosition(formData.ssic, formData.date)
+          left: getCancellationLinePosition(cancText, bodyFont)
         }
       }));
       
@@ -2974,7 +3020,7 @@ if (enclosures && enclosures.length > 0) {
             ],
             alignment: AlignmentType.LEFT,
             indent: {
-              left: getHeaderAlignmentPosition(formData.ssic, formData.date)
+              left: getHeaderAlignmentPosition(formData.ssic, formData.date, bodyFont)
             }
           }),
           // Date
@@ -2988,7 +3034,7 @@ if (enclosures && enclosures.length > 0) {
             ],
             alignment: AlignmentType.LEFT,
             indent: {
-              left: getHeaderAlignmentPosition(formData.ssic, formData.date)
+              left: getHeaderAlignmentPosition(formData.ssic, formData.date, bodyFont)
             }
           }),
           // Empty paragraph for spacing
@@ -4170,7 +4216,7 @@ const clearParagraphContent = (paragraphId: number) => {
                         }))}
                         required
                     >
-                        <option value="contingent">Contingent (FRP - For Ready Personnel)</option>
+                        <option value="contingent">Contingent (FRP - For Record Purposes)</option>
                         <option value="fixed">Fixed Date</option>
                     </select>
                 </div>
@@ -4184,31 +4230,61 @@ const clearParagraphContent = (paragraphId: number) => {
                     <input 
                         className="form-control"
                         type="text" 
-                        placeholder={formData.cancellationType === 'contingent' ? "e.g., 8 Jul 26 (or FRP)" : "e.g., 8 Jul 26"}
+                        placeholder={formData.cancellationType === 'contingent' ? "e.g., Oct 2025" : "e.g., Oct 2025"}
                         value={formData.cancellationDate || ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, cancellationDate: parseAndFormatDate(e.target.value) }))}
                         required
                     />
                 </div>
+                <div style={{
+                  marginTop: '0.5rem',
+                  padding: '0.5rem',
+                  backgroundColor: '#fef3c7',
+                  borderLeft: '4px solid #f59e0b',
+                  color: '#92400e',
+                  fontSize: '0.875rem',
+                  borderRadius: '0 0.5rem 0.5rem 0'
+                }}>
+                  <i className="fas fa-info-circle" style={{ marginRight: '0.5rem' }}></i>
+                  Bulletin cancels on the <strong>last day</strong> of the specified month.
+                  Format: <strong>MMM YYYY</strong> (e.g., Oct 2025)
+                </div>
 
                 {/* Conditional Contingency Description - Only show for contingent type */}
                 {formData.cancellationType === 'contingent' && (
-                    <div className="input-group">
-                        <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
-                            <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
-                            Contingency Condition:
-                        </span>
-                        <textarea 
-                            className="form-control"
-                            rows={3}
-                            placeholder="Describe the contingency condition (e.g., upon completion of training, upon receipt of new equipment, etc.)"
+                <>
+                <div className="input-group">
+                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
+                        <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
+                        Contingency Condition:
+                    </span>
+                    <textarea 
+                        className="form-control"
+                        rows={3}
+                        placeholder="Describe the contingency that will trigger early cancellation (e.g., This Bulletin is canceled when incorporated in MCO 5200.1)"
                             value={formData.cancellationContingency || ''}
                             onChange={(e) => setFormData(prev => ({ ...prev, cancellationContingency: e.target.value }))}
                             style={{ minHeight: '80px' }}
                         />
                     </div>
+                    <div style={{
+                      marginTop: '0.5rem',
+                      padding: '0.5rem',
+                      backgroundColor: '#dbeafe',
+                      borderLeft: '4px solid #3b82f6',
+                      color: '#1e40af',
+                      fontSize: '0.875rem',
+                      borderRadius: '0 0.5rem 0.5rem 0'
+                    }}>
+                      <i className="fas fa-lightbulb" style={{ marginRight: '0.5rem' }}></i>
+                      <strong>Contingency Note:</strong> This condition allows the bulletin to be canceled early
+                      once the event occurs, without waiting for the cancellation date. This text will appear
+                      as the <strong>final paragraph</strong> of your bulletin.
+                    </div>
+                    </>
+                    
                 )}
-
+                  
                 {/* Information Box for MCBul Cancellation */}
                 <div style={{
                    marginTop: '1rem',
@@ -4841,7 +4917,7 @@ const clearParagraphContent = (paragraphId: number) => {
               </>
             )}
             </Card>
-            
+
             <Card style={{ marginBottom: '1.5rem' }}>
               <CardHeader>
                 <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
