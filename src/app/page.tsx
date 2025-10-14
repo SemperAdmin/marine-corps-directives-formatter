@@ -1120,13 +1120,14 @@ interface ReferencesProps {
 }
 
 const ReferencesSection = ({ references, setReferences, formData, setFormData }: ReferencesProps) => {
-    // Auto-show if references exist
     const [showRef, setShowRef] = useState(references.some(r => r.trim() !== ''));
 
     useEffect(() => {
-        // Keep in sync with references
         setShowRef(references.some(r => r.trim() !== ''));
     }, [references]);
+
+    const MAX_REFERENCES_WARNING = 11;
+    const MAX_REFERENCES_ERROR = 13;
 
     const addItem = () => setReferences([...references, '']);
     const removeItem = (index: number) => setReferences(references.filter((_, i) => i !== index));
@@ -1145,42 +1146,159 @@ const ReferencesSection = ({ references, setReferences, formData, setFormData }:
     };
 
     return (
-        <Card className="mb-6">
-            <CardHeader className="pb-3">
-                <CardTitle className="flex items-center text-lg font-semibold">
-                    <i className="fas fa-book mr-2"></i>
-                    References
-                </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-                <div className="flex gap-6">
-                    <label className="flex items-center cursor-pointer">
-                        <input
-                            type="radio"
-                            name="ifRef"
-                            value="yes"
-                            checked={showRef}
-                            onChange={() => setShowRef(true)}
-                            className="mr-2 scale-125"
-                        />
-                        <span className="text-base">Yes</span>
-                    </label>
-                    <label className="flex items-center cursor-pointer">
-                        <input
-                            type="radio"
-                            name="ifRef"
-                            value="no"
-                            checked={!showRef}
-                            onChange={() => { setShowRef(false); setReferences(['']); }}
-                            className="mr-2 scale-125"
-                        />
-                        <span className="text-base">No</span>
-                    </label>
-                </div>
+        <div className="form-section">
+            <div className="section-legend">
+                <i className="fas fa-book" style={{ marginRight: '8px' }}></i>
+                References
+            </div>
+            
+            {/* Yes/No Toggle */}
+            <div style={{ display: 'flex', gap: '24px', marginBottom: '16px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                        type="radio"
+                        name="ifRef"
+                        value="yes"
+                        checked={showRef}
+                        onChange={() => setShowRef(true)}
+                        style={{ marginRight: '8px', transform: 'scale(1.2)' }}
+                    />
+                    <span style={{ fontSize: '16px', fontWeight: '500' }}>Yes</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
+                    <input
+                        type="radio"
+                        name="ifRef"
+                        value="no"
+                        checked={!showRef}
+                        onChange={() => { setShowRef(false); setReferences(['']); }}
+                        style={{ marginRight: '8px', transform: 'scale(1.2)' }}
+                    />
+                    <span style={{ fontSize: '16px', fontWeight: '500' }}>No</span>
+                </label>
+            </div>
 
+            {showRef && (
+                <div>
+                    {/* ⭐⭐⭐ ADD THIS ENTIRE SECTION HERE ⭐⭐⭐ */}
+                    {(() => {
+                        const nonEmptyCount = references.filter(ref => ref.trim().length > 0).length;
+                        
+                        if (nonEmptyCount === 0) return null;
+                        
+                        return (
+                            <div style={{
+                                padding: '16px',
+                                backgroundColor: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#fee2e2' : 
+                                               nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fef3c7' : '#d1fae5',
+                                borderRadius: '8px',
+                                marginBottom: '16px',
+                                border: `3px solid ${nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' : 
+                                                    nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fbbf24' : '#10b981'}`,
+                                boxShadow: nonEmptyCount >= MAX_REFERENCES_ERROR ? '0 4px 12px rgba(220, 38, 38, 0.3)' :
+                                          nonEmptyCount >= MAX_REFERENCES_WARNING ? '0 4px 12px rgba(251, 191, 36, 0.3)' :
+                                          '0 4px 12px rgba(16, 185, 129, 0.2)'
+                            }}>
+                                {/* Header with Count */}
+                                <div style={{ 
+                                    display: 'flex', 
+                                    justifyContent: 'space-between', 
+                                    alignItems: 'center', 
+                                    marginBottom: '12px' 
+                                }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <i className={`fas ${
+                                            nonEmptyCount >= MAX_REFERENCES_ERROR ? 'fa-exclamation-circle' :
+                                            nonEmptyCount >= MAX_REFERENCES_WARNING ? 'fa-exclamation-triangle' :
+                                            'fa-check-circle'
+                                        }`} style={{ 
+                                            fontSize: '20px',
+                                            color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' :
+                                                   nonEmptyCount >= MAX_REFERENCES_WARNING ? '#f59e0b' :
+                                                   '#10b981'
+                                        }}></i>
+                                        <span style={{ 
+                                            fontWeight: '700', 
+                                            fontSize: '18px',
+                                            color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
+                                                   nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
+                                                   '#065f46'
+                                        }}>
+                                            References Used: {nonEmptyCount}/{MAX_REFERENCES_ERROR}
+                                        </span>
+                                    </div>
+                                    
+                                    <span style={{ 
+                                        fontSize: '14px', 
+                                        fontWeight: '600',
+                                        color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
+                                               nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
+                                               '#065f46'
+                                    }}>
+                                        {nonEmptyCount >= MAX_REFERENCES_ERROR ? '🚫 Maximum Reached' : 
+                                         nonEmptyCount >= MAX_REFERENCES_WARNING ? '⚠️ Approaching Limit' : 
+                                         '✅ Good Status'}
+                                    </span>
+                                </div>
+                                
+                                {/* Progress Bar */}
+                                <div style={{ 
+                                    width: '100%', 
+                                    height: '12px', 
+                                    backgroundColor: '#e5e7eb',
+                                    borderRadius: '6px',
+                                    overflow: 'hidden',
+                                    marginBottom: '8px',
+                                    boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
+                                }}>
+                                    <div style={{
+                                        width: `${(nonEmptyCount / MAX_REFERENCES_ERROR) * 100}%`,
+                                        height: '100%',
+                                        backgroundColor: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' : 
+                                                       nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fbbf24' : 
+                                                       '#10b981',
+                                        transition: 'all 0.3s ease',
+                                        boxShadow: nonEmptyCount >= MAX_REFERENCES_ERROR ? '0 0 10px rgba(220, 38, 38, 0.5)' :
+                                                  nonEmptyCount >= MAX_REFERENCES_WARNING ? '0 0 10px rgba(251, 191, 36, 0.5)' :
+                                                  '0 0 10px rgba(16, 185, 129, 0.3)'
+                                    }}></div>
+                                </div>
+                                
+                                {/* Status Message */}
+                                <div style={{ 
+                                    fontSize: '13px',
+                                    fontWeight: '500',
+                                    color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
+                                           nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
+                                           '#065f46',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '6px'
+                                }}>
+                                    {nonEmptyCount >= MAX_REFERENCES_ERROR ? (
+                                        <>
+                                            <i className="fas fa-ban"></i>
+                                            <span>References at maximum capacity - may exceed ½ page limit</span>
+                                        </>
+                                    ) : nonEmptyCount >= MAX_REFERENCES_WARNING ? (
+                                        <>
+                                            <i className="fas fa-exclamation-triangle"></i>
+                                            <span>Approaching ½ page limit - consider consolidating references</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <i className="fas fa-check"></i>
+                                            <span>References will comfortably fit on ½ page</span>
+                                        </>
+                  )}
+                </div>
+                            </div>
+                        );
+                    })()}
+                    {/* ⭐⭐⭐ END OF PROGRESS BAR ⭐⭐⭐ */}
+                    
                 {showRef && (
                     <div className="space-y-4">
-            {/* Endorsement-specific guidance removed */}
                         <label className="block font-semibold mb-2">
                             <i className="fas fa-bookmark mr-2"></i>
                             Enter Reference(s):
@@ -1275,12 +1393,11 @@ const ReferencesSection = ({ references, setReferences, formData, setFormData }:
                         ))}
                     </div>
                 )}
-            </CardContent>
-        </Card>
+            </div>
+            )}
+        </div>
     );
-};
-
-
+};          
 interface EnclosuresProps {
   enclosures: string[];
   setEnclosures: (encls: string[]) => void;
@@ -1792,9 +1909,6 @@ useEffect(() => {
       setValidation(prev => ({ ...prev, subj: { isValid: false, message: 'Subject must be in ALL CAPS' } }));
     }
   };
-
-  // \u274c REMOVE: Flexible validateFromTo function
-  // const validateFromTo = (value: string, field: 'from' | 'to') => { ... }
 
 const validateDirectiveReference = (formData: FormData): string[] => {
   const errors: string[] = [];
@@ -4470,8 +4584,7 @@ const clearParagraphContent = (paragraphId: number) => {
                   References
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="radio-group">
+              <CardContent className="radio-group">
                   <label style={{ display: 'flex', alignItems: 'center' }}>
                     <input
                       type="radio"
@@ -4494,14 +4607,134 @@ const clearParagraphContent = (paragraphId: number) => {
                     />
                     <span style={{ fontSize: '1.1rem' }}>No</span>
                   </label>
-                </div>
+              </CardContent>
 
                 {showRef && (
-                  <div className="dynamic-section">
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                      <i className="fas fa-bookmark" style={{ marginRight: '8px' }}></i>
-                      Enter Reference(s):
-                    </label>
+                  <>
+                    {/* ⭐ PROGRESS BAR - ADD THIS ENTIRE SECTION ⭐ */}
+                    {(() => {
+                      const nonEmptyCount = references.filter(ref => ref.trim().length > 0).length;
+                      const MAX_REFERENCES_WARNING = 11;
+                      const MAX_REFERENCES_ERROR = 13;
+                      
+                      if (nonEmptyCount === 0) return null;
+                      
+                      return (
+                        <div style={{
+                          padding: '16px',
+                          backgroundColor: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#fee2e2' : 
+                                         nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fef3c7' : '#d1fae5',
+                          borderRadius: '8px',
+                          marginBottom: '16px',
+                          border: `3px solid ${nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' : 
+                                              nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fbbf24' : '#10b981'}`,
+                          boxShadow: nonEmptyCount >= MAX_REFERENCES_ERROR ? '0 4px 12px rgba(220, 38, 38, 0.3)' :
+                                    nonEmptyCount >= MAX_REFERENCES_WARNING ? '0 4px 12px rgba(251, 191, 36, 0.3)' :
+                                    '0 4px 12px rgba(16, 185, 129, 0.2)'
+                        }}>
+                          {/* Header with Count */}
+                          <div style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            marginBottom: '12px' 
+                          }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <i className={`fas ${
+                                nonEmptyCount >= MAX_REFERENCES_ERROR ? 'fa-exclamation-circle' :
+                                nonEmptyCount >= MAX_REFERENCES_WARNING ? 'fa-exclamation-triangle' :
+                                'fa-check-circle'
+                              }`} style={{ 
+                                fontSize: '20px',
+                                color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' :
+                                       nonEmptyCount >= MAX_REFERENCES_WARNING ? '#f59e0b' :
+                                       '#10b981'
+                              }}></i>
+                              <span style={{ 
+                                fontWeight: '700', 
+                                fontSize: '18px',
+                                color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
+                                       nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
+                                       '#065f46'
+                              }}>
+                                References Used: {nonEmptyCount}/13
+                              </span>
+                            </div>
+                            
+                            <span style={{ 
+                              fontSize: '14px', 
+                              fontWeight: '600',
+                              color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
+                                     nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
+                                     '#065f46'
+                            }}>
+                              {nonEmptyCount >= MAX_REFERENCES_ERROR ? '🚫 Maximum Reached' : 
+                               nonEmptyCount >= MAX_REFERENCES_WARNING ? '⚠️ Approaching Limit' : 
+                               '✅ Good Status'}
+                            </span>
+                          </div>
+                          
+                          {/* Progress Bar */}
+                          <div style={{ 
+                            width: '100%', 
+                            height: '12px', 
+                            backgroundColor: '#e5e7eb',
+                            borderRadius: '6px',
+                            overflow: 'hidden',
+                            marginBottom: '8px',
+                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
+                          }}>
+                            <div style={{
+                              width: `${(nonEmptyCount / MAX_REFERENCES_ERROR) * 100}%`,
+                              height: '100%',
+                              backgroundColor: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' : 
+                                             nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fbbf24' : 
+                                             '#10b981',
+                              transition: 'all 0.3s ease',
+                              boxShadow: nonEmptyCount >= MAX_REFERENCES_ERROR ? '0 0 10px rgba(220, 38, 38, 0.5)' :
+                                        nonEmptyCount >= MAX_REFERENCES_WARNING ? '0 0 10px rgba(251, 191, 36, 0.5)' :
+                                        '0 0 10px rgba(16, 185, 129, 0.3)'
+                            }}></div>
+                          </div>
+                          
+                          {/* Status Message */}
+                          <div style={{ 
+                            fontSize: '13px',
+                            fontWeight: '500',
+                            color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
+                                   nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
+                                   '#065f46',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px'
+                          }}>
+                            {nonEmptyCount >= MAX_REFERENCES_ERROR ? (
+                              <>
+                                <i className="fas fa-ban"></i>
+                                <span>References at maximum capacity - may exceed ½ page limit</span>
+                              </>
+                            ) : nonEmptyCount >= MAX_REFERENCES_WARNING ? (
+                              <>
+                                <i className="fas fa-exclamation-triangle"></i>
+                                <span>Approaching ½ page limit - consider consolidating references</span>
+                              </>
+                            ) : (
+                              <>
+                                <i className="fas fa-check"></i>
+                                <span>References will comfortably fit on ½ page</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    {/* ⭐ END OF PROGRESS BAR ⭐ */}
+                    
+                    <div className="dynamic-section">
+                      <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
+                        <i className="fas fa-bookmark" style={{ marginRight: '8px' }}></i>
+                        Enter Reference(s):
+                      </label>
                     {references.map((ref, index) => (
                       <div key={index} className="input-group" style={{ width: '100%', display: 'flex' }}>
                         <span className="input-group-text" style={{
@@ -4551,16 +4784,30 @@ const clearParagraphContent = (paragraphId: number) => {
                           <button
                             className="btn btn-primary"
                             type="button"
-                            onClick={() => addItem(setReferences)}
+                            onClick={() => {
+                              const nonEmptyCount = references.filter(ref => ref.trim().length > 0).length;
+                              if (nonEmptyCount >= 13) {
+                                alert('Maximum of 13 references reached to ensure they fit on ½ page.');
+                                return;
+                              }
+                              addItem(setReferences);
+                            }}
+                            disabled={references.filter(ref => ref.trim().length > 0).length >= 13}
                             style={{
                               borderRadius: '0 8px 8px 0',
                               flexShrink: 0,
-                              background: 'linear-gradient(135deg, #b8860b, #ffd700)',
-                              border: '2px solid #b8860b',
+                              background: references.filter(ref => ref.trim().length > 0).length >= 13 
+                                ? 'linear-gradient(135deg, #6c757d, #495057)' 
+                                : 'linear-gradient(135deg, #b8860b, #ffd700)',
+                              border: references.filter(ref => ref.trim().length > 0).length >= 13 
+                                ? '2px solid #6c757d' 
+                                : '2px solid #b8860b',
                               color: 'white',
                               fontWeight: '600',
                               padding: '8px 16px',
-                              transition: 'all 0.3s ease'
+                              transition: 'all 0.3s ease',
+                              opacity: references.filter(ref => ref.trim().length > 0).length >= 13 ? 0.6 : 1,
+                              cursor: references.filter(ref => ref.trim().length > 0).length >= 13 ? 'not-allowed' : 'pointer'
                             }}
                             onMouseEnter={(e) => {
                               (e.target as HTMLButtonElement).style.background = 'linear-gradient(135deg, #ffd700, #b8860b)';
@@ -4572,7 +4819,7 @@ const clearParagraphContent = (paragraphId: number) => {
                             }}
                           >
                             <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
-                            Add
+                            {references.filter(ref => ref.trim().length > 0).length >= 13 ? 'Max Reached' : 'Add'}
                           </button>
                         ) : (
                           <button
@@ -4591,8 +4838,8 @@ const clearParagraphContent = (paragraphId: number) => {
                       </div>
                     ))}
                   </div>
-                )}
-              </CardContent>
+              </>
+            )}
             </Card>
             
             <Card style={{ marginBottom: '1.5rem' }}>
@@ -4602,8 +4849,7 @@ const clearParagraphContent = (paragraphId: number) => {
                   Enclosures
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <div className="radio-group">
+              <CardContent className="radio-group">
                   <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
                     <input
                       type="radio"
@@ -4626,7 +4872,7 @@ const clearParagraphContent = (paragraphId: number) => {
                     />
                     <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>No</span>
                   </label>
-                </div>
+              </CardContent>  
 
                 {showEncl && (
                   <div className="dynamic-section">
@@ -4697,7 +4943,6 @@ const clearParagraphContent = (paragraphId: number) => {
                     ))}
                   </div>
                 )}
-              </CardContent>
             </Card>
           </div>
 
