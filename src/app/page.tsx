@@ -4630,24 +4630,6 @@ const clearUnitInfo = () => {
         </div>
       </div>
 
-          {/* Footer */}
-          <div style={{ 
-            marginTop: '32px', 
-            textAlign: 'center', 
-            fontSize: '0.875rem', 
-            color: '#6c757d' 
-          }}>
-            <p>
-              <i className="fas fa-shield-alt" style={{ marginRight: '4px' }}></i>
-              DoD Seal automatically included • Format compliant with SECNAV M-5216.5
-            </p>
-            <p style={{ marginTop: '8px' }}>
-              <a href="https://linktr.ee/semperadmin" target="_blank" rel="noopener noreferrer" style={{ color: '#b8860b', textDecoration: 'none' }}>
-                Connect with Semper Admin
-              </a>
-            </p>
-          </div>
-
     </div></>
   );
 }
