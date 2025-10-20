@@ -2,9 +2,19 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+// Wizard components
+import { WizardHeader } from '@/components/wizard/WizardHeader';
 import { Document, Packer, Paragraph, TextRun, AlignmentType, TabStopType, Header, Footer, ImageRun, convertInchesToTwip, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, PageNumber, NumberFormat } from 'docx';
-// Removed saveAs import - using manual download method for better Next.js compatibility
 // Import DoD seal functionality
+import { Step1Formatting } from '@/app/Step1Formatting';
+import { Step3Header } from '@/app/Step3Header';
+import { Step4Optional } from '@/app/Step4Optional';
+import { Step5Body } from '@/app/Step5Body';
+import { Step6Closing } from '@/app/Step6Closing';
+import { Step7Distribution } from '@/app/Step7Distribution';
+import { Step8Review } from '@/app/Step8Review';
+import Step4Final from '@/app/Step4Final';
+import { Step3Content } from '@/app/Step3Content';
 import { createDoDSeal, getDoDSealBuffer } from '@/lib/dod-seal';
 
 import { DOC_SETTINGS } from '@/lib/doc-settings';
@@ -13,7 +23,6 @@ import { UNITS, Unit } from '@/lib/units';
 import { SSICS } from '@/lib/ssic';
 import { Combobox } from '@/components/ui/combobox';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
 /** 
  * Simple and accurate text width estimation for Times New Roman 12pt 
  * Based on actual measurements in Word documents 
@@ -693,6 +702,8 @@ interface FormData {
 interface SavedLetter {
   id: string;
   documentType: string;
+  letterheadType?: 'marine-corps' | 'navy';
+  bodyFont?: 'times' | 'courier';
   
   // ✅… NEW: Essential Directive Elements
   ssic_code?: string;
@@ -744,6 +755,10 @@ interface SavedLetter {
   distribution: DistributionEntry[];
   paragraphs: ParagraphData[];
   basicLetterReference?: string;
+  wizardState?: {
+    currentStep: number;
+    completedSteps: number[];
+  };
 }
 
 
@@ -1784,7 +1799,7 @@ export default function MarineCorpsDirectivesFormatter() {
 
   const [formData, setFormData] = useState<FormData>({
     documentType: 'mco',
-    letterheadType: 'navy',
+    letterheadType: 'marine-corps',
     bodyFont: 'times',
     distributionStatement: {
       code: 'A' as const
@@ -1828,13 +1843,26 @@ export default function MarineCorpsDirectivesFormatter() {
     basicLetterReference: ''
   });
 
+  // ========== WIZARD STATE MANAGEMENT ==========
+  const [currentStep, setCurrentStep] = useState<number>(1);
+  const [completedSteps, setCompletedSteps] = useState<number[]>([]);
+  const [stepValidation, setStepValidation] = useState({
+    step1: false,
+    step2: false,
+    step3: false,
+    step4: false,
+    step5: false,
+    step6: false,
+    step7: false,
+    step8: false,
+  });
+
   const [validation, setValidation] = useState<ValidationState>({
     subj: { isValid: false, message: '' },
     from: { isValid: false, message: '' }
   });
 
   const [showRef, setShowRef] = useState(false);
-  const [showPreview, setShowPreview] = useState(false);
   const [showEncl, setShowEncl] = useState(false);
   const [showDelegation, setShowDelegation] = useState(false);
   const [showReports, setShowReports] = useState(false);
@@ -1940,6 +1968,7 @@ const [paragraphCounter, setParagraphCounter] = useState(6);
 const [isGenerating, setIsGenerating] = useState(false);
 const [structureErrors, setStructureErrors] = useState<string[]>([]);
 const [savedLetters, setSavedLetters] = useState<SavedLetter[]>([]);
+  const [isSavedVersionsCollapsed, setIsSavedVersionsCollapsed] = useState(true);
 
 // Voice-to-text state
 const [isListening, setIsListening] = useState(false);
@@ -1965,6 +1994,480 @@ const initializeSpeechRecognition = useCallback(() => {
 useEffect(() => {
   initializeSpeechRecognition();
 }, [initializeSpeechRecognition]);
+
+// ========== WIZARD NAVIGATION ==========
+const handleContinue = () => {
+  if (currentStep < 8) {
+    if (!completedSteps.includes(currentStep)) {
+      setCompletedSteps([...completedSteps, currentStep]);
+    }
+    setCurrentStep(currentStep + 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+const handlePrevious = () => {
+  if (currentStep > 1) {
+    setCurrentStep(currentStep - 1);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+};
+
+const handleStepClick = useCallback((step: number) => {
+  if (completedSteps.includes(step) || step === currentStep) {
+    setCurrentStep(step);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}, [completedSteps, currentStep]);
+
+// Paragraph-related functions
+const addParagraph = useCallback((type: 'main' | 'sub' | 'same' | 'up', afterId: number) => {
+  setParagraphs(prevParagraphs => {
+    const currentParagraph = prevParagraphs.find(p => p.id === afterId);
+    if (!currentParagraph) return prevParagraphs;
+
+    let newLevel = 1;
+    switch (type) {
+      case 'main': newLevel = 1; break;
+      case 'same': newLevel = currentParagraph.level; break;
+      case 'sub': newLevel = Math.min(currentParagraph.level + 1, 8); break;
+      case 'up': newLevel = Math.max(currentParagraph.level - 1, 1); break;
+    }
+
+    const newId = (prevParagraphs.length > 0 ? Math.max(...prevParagraphs.map(p => p.id)) : 0) + 1;
+    const currentIndex = prevParagraphs.findIndex(p => p.id === afterId);
+    const newParagraphs = [...prevParagraphs];
+    newParagraphs.splice(currentIndex + 1, 0, { id: newId, level: newLevel, content: '' });
+
+    return newParagraphs;
+  });
+}, []);
+
+const removeParagraph = useCallback((id: number) => {
+  setParagraphs(prev => {
+    const paragraphToRemove = prev.find(p => p.id === id);
+    if (paragraphToRemove?.isMandatory && paragraphToRemove?.title !== 'Cancellation') {
+      alert('Cannot delete mandatory paragraphs.');
+      return prev;
+    }
+    if (id === 1) {
+      alert('Cannot delete the first paragraph.');
+      return prev;
+    }
+    return prev.filter(p => p.id !== id);
+  });
+}, []);
+
+const updateParagraphContent = useCallback((id: number, content: string) => {
+  setParagraphs(prev => {
+    const cleanedContent = content
+      .replace(/\u00A0/g, ' ')
+      .replace(/\u2007/g, ' ')
+      .replace(/\u202F/g, ' ')
+      .replace(/[\r\n]/g, ' ');
+    const newParagraphs = prev.map(p => p.id === id ? { ...p, content: cleanedContent } : p);
+    // validateAcronyms(newParagraphs); // This might need to be handled differently if it sets state
+    return newParagraphs;
+  });
+}, []);
+
+const moveParagraphUp = useCallback((id: number) => {
+  setParagraphs(prev => {
+    const currentIndex = prev.findIndex(p => p.id === id);
+    if (currentIndex > 0) {
+      const currentPara = prev[currentIndex];
+      const paraAbove = prev[currentIndex - 1];
+      if (currentPara.level > paraAbove.level) return prev;
+      const newParagraphs = [...prev];
+      [newParagraphs[currentIndex - 1], newParagraphs[currentIndex]] = [newParagraphs[currentIndex], newParagraphs[currentIndex - 1]];
+      return newParagraphs;
+    }
+    return prev;
+  });
+}, []);
+
+const moveParagraphDown = useCallback((id: number) => {
+  setParagraphs(prev => {
+    const currentIndex = prev.findIndex(p => p.id === id);
+    if (currentIndex < prev.length - 1) {
+      const newParagraphs = [...prev];
+      [newParagraphs[currentIndex], newParagraphs[currentIndex + 1]] = [newParagraphs[currentIndex + 1], newParagraphs[currentIndex]];
+      return newParagraphs;
+    }
+    return prev;
+  });
+}, []);
+
+const clearParagraphContent = useCallback((paragraphId: number) => {
+  updateParagraphContent(paragraphId, '');
+}, [updateParagraphContent]);
+
+const handleUnderlineText = useCallback((paragraphId: number, textarea: HTMLTextAreaElement) => {
+  if (!textarea) return;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selectedText = textarea.value.substring(start, end);
+  if (selectedText.length === 0) return;
+
+  const isAlreadyUnderlined = selectedText.startsWith('<u>') && selectedText.endsWith('</u>');
+  const newText = isAlreadyUnderlined ? selectedText.slice(3, -4) : `<u>${selectedText}</u>`;
+  const updatedContent = textarea.value.substring(0, start) + newText + textarea.value.substring(end);
+
+  updateParagraphContent(paragraphId, updatedContent);
+
+  setTimeout(() => {
+    if (textarea) {
+      const newCursorPos = start + newText.length;
+      textarea.setSelectionRange(newCursorPos, newCursorPos);
+      textarea.focus();
+    }
+  }, 0);
+}, [updateParagraphContent]);
+
+// Voice-to-text functions
+const startVoiceInput = useCallback((paragraphId: number) => {
+  if (!speechRecognition) {
+    alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
+    return;
+  }
+
+  // Stop any existing recognition
+  if (isListening) {
+    speechRecognition.stop();
+    return;
+  }
+
+  setCurrentListeningParagraph(paragraphId);
+  setIsListening(true);
+
+  let finalTranscript = '';
+
+  speechRecognition.onresult = (event: any) => {
+    let interimTranscript = '';
+    finalTranscript = '';
+
+    for (let i = event.resultIndex; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalTranscript += event.results[i][0].transcript;
+      } else {
+        interimTranscript += event.results[i][0].transcript;
+      }
+    }
+
+    if (finalTranscript) {
+      const currentParagraph = paragraphs.find(p => p.id === paragraphId);
+      if (currentParagraph) {
+        const newContent = currentParagraph.content + (currentParagraph.content ? ' ' : '') + finalTranscript;
+        updateParagraphContent(paragraphId, newContent);
+      }
+    }
+  };
+
+  speechRecognition.onerror = (event: any) => {
+    console.error('Speech recognition error:', event.error);
+    setIsListening(false);
+    setCurrentListeningParagraph(null);
+    // Handle specific errors with user-friendly messages
+  };
+
+  speechRecognition.onend = () => {
+    setIsListening(false);
+    setCurrentListeningParagraph(null);
+  };
+
+  speechRecognition.start();
+}, [speechRecognition, isListening, paragraphs, updateParagraphContent]);
+
+const stopVoiceInput = useCallback(() => {
+  if (speechRecognition && isListening) {
+    speechRecognition.stop();
+    setIsListening(false);
+    setCurrentListeningParagraph(null);
+  }
+}, [speechRecognition, isListening]);
+
+// Helper to get next order number for subsections
+const getNextSubsectionOrder = useCallback(() => {
+  const orders = [
+    adminSubsections.recordsManagement.show ? adminSubsections.recordsManagement.order : 0,
+    adminSubsections.privacyAct.show ? adminSubsections.privacyAct.order : 0
+  ].filter(o => o > 0);
+  
+  return orders.length > 0 ? Math.max(...orders) + 1 : 1;
+}, [adminSubsections]);
+
+// Admin & Logistics optional subsections (MCO only)
+const addRecordsManagement = useCallback(() => {
+  setAdminSubsections(prev => ({
+    ...prev,
+    recordsManagement: { ...prev.recordsManagement, show: true, order: getNextSubsectionOrder() }
+  }));
+}, [getNextSubsectionOrder]);
+
+const addPrivacyAct = useCallback(() => {
+  setAdminSubsections(prev => ({
+    ...prev,
+    privacyAct: { ...prev.privacyAct, show: true, order: getNextSubsectionOrder() }
+  }));
+}, [getNextSubsectionOrder]);
+
+const removeRecordsManagement = useCallback(() => {
+  setAdminSubsections(prev => ({
+    ...prev,
+    recordsManagement: { ...prev.recordsManagement, show: false, order: 0 }
+  }));
+}, []);
+
+const removePrivacyAct = useCallback(() => {
+  setAdminSubsections(prev => ({
+    ...prev,
+    privacyAct: { ...prev.privacyAct, show: false, order: 0 }
+  }));
+}, []);
+
+// Copy To list helpers
+const addCopyToEntry = () => {
+  setCopyToList(prev => [...prev, { code: '', qty: 1 }]);
+};
+
+const removeCopyToEntry = (index: number) => {
+  setCopyToList(prev => prev.filter((_, i) => i !== index));
+};
+
+
+const saveLetter = () => {
+  const newLetter: SavedLetter = {
+    ...formData,
+    id: new Date().toISOString(),
+    savedAt: new Date().toLocaleString(),
+    references,
+    enclosures,
+    distribution,
+    paragraphs,
+    wizardState: {
+      currentStep,
+      completedSteps
+    }
+  };
+
+  const updatedLetters = [newLetter, ...savedLetters].slice(0, 10);
+  setSavedLetters(updatedLetters);
+  localStorage.setItem('marineCorpsDirectives', JSON.stringify(updatedLetters));
+  alert(`Draft saved successfully! Current step: ${currentStep}`);
+};
+
+const loadLetter = (letterToLoad: SavedLetter) => {
+  if ((letterToLoad as any).wizardState) {
+    const wizardState = (letterToLoad as any).wizardState;
+    setCurrentStep(wizardState.currentStep || 1);
+    setCompletedSteps(wizardState.completedSteps || []);
+  } else {
+    setCurrentStep(1);
+    setCompletedSteps([]);
+  }
+
+  setFormData(prev => ({
+    ...prev,
+    ...letterToLoad,
+    documentType: letterToLoad.documentType as 'mco' | 'mcbul',
+    letterheadType: letterToLoad.letterheadType as 'marine-corps' | 'navy',
+    bodyFont: letterToLoad.bodyFont as 'times' | 'courier',
+    cancellationType: letterToLoad.cancellationType as 'contingent' | 'fixed' | undefined,
+    directiveSubType: (letterToLoad.directiveSubType as any) || 'policy',
+    policyScope: letterToLoad.policyScope as any,
+    securityClassification: (letterToLoad.securityClassification as any) || 'unclassified',
+    distributionScope: (letterToLoad.distributionScope as any) || 'total-force',
+    reviewCycle: letterToLoad.reviewCycle as any,
+    distributionStatement: {
+      code: (letterToLoad.distributionStatement?.code as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X') || 'A',
+      reason: letterToLoad.distributionStatement?.reason,
+      dateOfDetermination: letterToLoad.distributionStatement?.dateOfDetermination,
+      originatingCommand: letterToLoad.distributionStatement?.originatingCommand
+    },
+    ssic_code: letterToLoad.ssic_code || '',
+    sponsor_code: letterToLoad.sponsor_code || '',
+    date_signed: letterToLoad.date_signed || '',
+    supersedes: letterToLoad.supersedes || [],
+    issuingAuthority: letterToLoad.issuingAuthority || '',
+    startingReferenceLevel: letterToLoad.startingReferenceLevel || 'a',
+    startingEnclosureNumber: letterToLoad.startingEnclosureNumber || '1',
+    line1: letterToLoad.line1 || '',
+    line2: letterToLoad.line2 || '',
+    line3: letterToLoad.line3 || '',
+    ssic: letterToLoad.ssic || '',
+    originatorCode: letterToLoad.originatorCode || '',
+    date: letterToLoad.date || '',
+    from: letterToLoad.from || '',
+    subj: letterToLoad.subj || '',
+    sig: letterToLoad.sig || '',
+    delegationText: letterToLoad.delegationText || [],
+    designationLine: letterToLoad.designationLine || '',
+  }));
+  setReferences(letterToLoad.references || []);
+  setEnclosures(letterToLoad.enclosures || []);
+  setDistribution(letterToLoad.distribution || []);
+  setParagraphs(letterToLoad.paragraphs || []);
+};
+
+const generateDocument = async () => { 
+  setIsGenerating(true);
+  try {
+    saveLetter();
+    
+    let doc;
+    let filename;
+    
+    doc = await generateBasicLetter();
+    
+    const ssic = formData.ssic || '';
+    const subject = formData.subj || 'Document';
+    
+    if (ssic && subject) {
+      const cleanSubject = subject.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, ' ').trim();
+      filename = `${ssic} ${cleanSubject}.docx`;
+    } else {
+      const baseFilename = subject || formData.documentType?.toUpperCase() || 'MarineCorpsDirective';
+      filename = `${baseFilename.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
+    }
+    
+    if(doc) {
+      const blob = await Packer.toBlob(doc);
+      downloadFile(blob, filename);
+    }
+  } catch (error) {
+    console.error("Error generating document:", error);
+    alert("Error generating document: " + (error as Error).message);
+  } finally {
+    setIsGenerating(false);
+  }
+}; 
+
+const handleParagraphAction = (e: Event) => {
+  const { action, payload } = (e as CustomEvent).detail;
+  switch (action) {
+    case 'add': addParagraph(payload.type, payload.afterId); break;
+    case 'remove': removeParagraph(payload.id); break;
+    case 'update': updateParagraphContent(payload.id, payload.content); break;
+    case 'move': payload.direction === 'up' ? moveParagraphUp(payload.id) : moveParagraphDown(payload.id); break;
+    case 'clear': clearParagraphContent(payload.id); break;
+    case 'underline': handleUnderlineText(payload.id, payload.textarea); break;
+    case 'voice': isListening ? stopVoiceInput() : startVoiceInput(payload.id); break;
+  }
+};
+
+const handleAdminSubsectionAction = (e: Event) => {
+  const { action, payload } = (e as CustomEvent).detail;
+  switch (action) {
+    case 'add':
+      if (payload.type === 'recordsManagement') addRecordsManagement();
+      if (payload.type === 'privacyAct') addPrivacyAct();
+      break;
+    case 'remove':
+      if (payload.type === 'recordsManagement') removeRecordsManagement();
+      if (payload.type === 'privacyAct') removePrivacyAct();
+      break;
+    case 'update':
+      setAdminSubsections(prev => ({ ...prev, [payload.type]: { ...prev[payload.type as keyof typeof prev], content: payload.content } }));
+      break;
+  }
+};
+
+// Event handlers for child components, wrapped in useCallback
+const handleListAction = (e: Event) => {
+  const { list, action, payload } = (e as CustomEvent).detail;
+  const listMap = {
+    references: { setter: setReferences },
+    enclosures: { setter: setEnclosures },
+    reports: { setter: setReports },
+  };
+
+  const { setter } = listMap[list as keyof typeof listMap];
+
+  switch (action) {
+    case 'add':
+      if (list === 'reports') {
+        setter((prev: any) => [...prev, { id: `report-${Date.now()}`, title: '', controlSymbol: '', paragraphRef: '', exempt: false }]);
+      } else {
+        setter((prev: any) => [...prev, '']);
+      }
+      break;
+    case 'remove':
+      if (list === 'reports') {
+        setter((prev: any) => prev.filter((item: any) => item.id !== payload.id));
+      } else {
+        setter((prev: any) => prev.filter((_: any, i: number) => i !== payload.index));
+      }
+      break;
+    case 'update':
+      if (list === 'reports') {
+        setter((prev: any) => prev.map((item: any) => item.id === payload.id ? { ...item, [payload.field]: payload.value } : item));
+      } else if (payload.index === -1) { // Reset list
+        setter(payload.value);
+      } else {
+        setter((prev: any) => prev.map((item: any, i: number) => i === payload.index ? payload.value : item));
+      }
+      break;
+  }
+};
+
+const handleDistributionAction = (e: Event) => {
+  const { action, payload } = (e as CustomEvent).detail;
+  switch (action) {
+    case 'update':
+      if (payload.list === 'copyToList') {
+        setCopyToList(prev => prev.map((item, i) => i === payload.index ? { ...item, [payload.field]: payload.value } : item));
+      } else if (payload.field === 'distributionType') {
+        setDistributionType(payload.value);
+      } else if (payload.field === 'pcn') {
+        setPcn(payload.value);
+      }
+      break;
+    case 'add':
+      if (payload.list === 'copyToList') addCopyToEntry();
+      break;
+    case 'remove':
+      if (payload.list === 'copyToList') removeCopyToEntry(payload.index);
+      break;
+  }
+};
+
+const handleFinalAction = (e: Event) => {
+  const { action, payload } = (e as CustomEvent).detail;
+  if (action === 'generate') generateDocument();
+  if (action === 'loadLetter') loadLetter(payload.letter);
+};
+
+// Listen for CustomEvents from serializable child components (DocumentTypeSelector, Step1Basics)
+useEffect(() => {
+  const handleFormChange = (e: CustomEvent<Partial<FormData>>) => {
+    setFormData(prev => ({ ...prev, ...e.detail }));
+  };
+
+  const handleWizardStepClick = (e: CustomEvent<{ step: number }>) => {
+    const step = e.detail?.step;
+    if (typeof step === 'number') {
+      handleStepClick(step);
+    }
+  };
+
+  document.addEventListener('wizardFormChange', handleFormChange as (e: Event) => void);
+  document.addEventListener('wizardStepClick', handleWizardStepClick as (e: Event) => void);
+  document.addEventListener('wizardListAction', handleListAction);
+  document.addEventListener('wizardParagraphAction', handleParagraphAction);
+  document.addEventListener('wizardAdminSubsectionAction', handleAdminSubsectionAction);
+  document.addEventListener('wizardDistributionAction', handleDistributionAction);
+  document.addEventListener('wizardFinalAction', handleFinalAction);
+
+  return () => {
+    document.removeEventListener('wizardFormChange', handleFormChange as (e: Event) => void);
+    document.removeEventListener('wizardStepClick', handleWizardStepClick as (e: Event) => void);
+    document.removeEventListener('wizardListAction', handleListAction);
+    document.removeEventListener('wizardParagraphAction', handleParagraphAction);
+    document.removeEventListener('wizardAdminSubsectionAction', handleAdminSubsectionAction);
+    document.removeEventListener('wizardDistributionAction', handleDistributionAction);
+    document.removeEventListener('wizardFinalAction', handleFinalAction);
+  };
+}, [handleStepClick]);
 
   // Helper functions for references and enclosures
   const getReferenceLetter = (index: number, startingLevel: string): string => {
@@ -2108,81 +2611,53 @@ useEffect(() => {
     }
   }, [formData.documentType, formData.cancellationType, formData.cancellationContingency]);
 
-  const saveLetter = () => {
-    const newLetter: SavedLetter = {
-      ...formData,
-      id: new Date().toISOString(), // Unique ID
-      savedAt: new Date().toLocaleString(),
-      references,
-      enclosures,
-      distribution,
-      paragraphs,
+  // ========== STEP VALIDATION FUNCTIONS ==========
+  const validateStep1 = useCallback((): boolean => true, []);
+  const validateStep2 = useCallback((): boolean => true, []); // Unit
+  const validateStep3 = useCallback((): boolean => true, []); // Header
+  const validateStep4 = useCallback((): boolean => true, []); // Optional
+  const validateStep5 = useCallback((): boolean => true, []); // Body
+  const validateStep6 = useCallback((): boolean => true, []); // Closing
+  const validateStep7 = useCallback((): boolean => true, []); // Distribution
+  const validateStep8 = useCallback((): boolean => true, []); // Review
+
+  // Update step validation state whenever relevant fields change
+  useEffect(() => {
+    setStepValidation({
+      step1: validateStep1(),
+      step2: validateStep2(),
+      step3: validateStep3(),
+      step4: validateStep4(),
+      step5: validateStep5(),
+      step6: validateStep6(),
+      step7: validateStep7(),
+      step8: validateStep8(),
+    });
+  }, [validateStep1, validateStep2, validateStep3, validateStep4, validateStep5, validateStep6, validateStep7, validateStep8]);
+
+    // ========== PROGRESS CALCULATION ==========
+  const calculateProgress = useCallback((): number => {
+    const totalSteps = 8;
+    const stepPercentage = 100 / totalSteps;
+    const baseProgress = (currentStep - 1) * stepPercentage;
+    
+    // Get current step completion percentage
+    const stepCompletion = {
+      1: validateStep1() ? 100 : 50,
+      2: validateStep2() ? 100 : 50,
+      3: validateStep3() ? 100 : 50,
+      4: validateStep4() ? 100 : 50,
+      5: validateStep5() ? 100 : 50,
+      6: validateStep6() ? 100 : 50,
+      7: validateStep7() ? 100 : 50,
+      8: validateStep8() ? 100 : 50,
     };
-
-    const updatedLetters = [newLetter, ...savedLetters].slice(0, 10); // Keep max 10 saves
-    setSavedLetters(updatedLetters);
-    localStorage.setItem('marineCorpsDirectives', JSON.stringify(updatedLetters));
-  };
-  
-  const loadLetter = (letterToLoad: SavedLetter) => {
-    setFormData(prev => ({
-      ...prev,
-      documentType: letterToLoad.documentType as 'mco' | 'mcbul',
-
-      // ✅… NEW: Essential Directive Elements
-      distributionStatement: {
-        code: (letterToLoad.distributionStatement?.code as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X') || 'A',
-        reason: letterToLoad.distributionStatement?.reason,
-        dateOfDetermination: letterToLoad.distributionStatement?.dateOfDetermination,
-        originatingCommand: letterToLoad.distributionStatement?.originatingCommand
-      },
-      // ✅… ADD: Missing properties
-      ssic_code: letterToLoad.ssic_code || '',
-      consecutive_point: letterToLoad.consecutive_point,
-      revision_suffix: letterToLoad.revision_suffix,
-      sponsor_code: letterToLoad.sponsor_code || '',
-      date_signed: letterToLoad.date_signed || '',
-      supersedes: letterToLoad.supersedes || [],
-      directiveSubType: (letterToLoad.directiveSubType as any) || 'policy',
-      policyScope: letterToLoad.policyScope as any,
-      cancellationDate: letterToLoad.cancellationDate,
-      parentDirective: letterToLoad.parentDirective,
-      affectedSections: letterToLoad.affectedSections || [],
-      issuingAuthority: letterToLoad.issuingAuthority || '',
-      securityClassification: (letterToLoad.securityClassification as any) || 'unclassified',
-      distributionScope: (letterToLoad.distributionScope as any) || 'total-force',
-      reviewCycle: letterToLoad.reviewCycle as any,
-      startingReferenceLevel: letterToLoad.startingReferenceLevel || 'a',
-      startingEnclosureNumber: letterToLoad.startingEnclosureNumber || '1',
-      line1: letterToLoad.line1 || '',
-      line2: letterToLoad.line2 || '',
-      line3: letterToLoad.line3 || '',
-      ssic: letterToLoad.ssic || '',
-      originatorCode: letterToLoad.originatorCode || '',
-      date: letterToLoad.date || '',
-      from: letterToLoad.from || '',
-      to: 'Distribution List', // ✅… ALWAYS: Set to default value
-      subj: letterToLoad.subj || '',
-      sig: letterToLoad.sig || '',
-      delegationText: letterToLoad.delegationText || [],
-      startingPageNumber: letterToLoad.startingPageNumber || 1,
-      previousPackagePageCount: letterToLoad.previousPackagePageCount || 0,
-      savedAt: letterToLoad.savedAt || '',
-      references: letterToLoad.references || [],
-      enclosures: letterToLoad.enclosures || [],
-      distribution: letterToLoad.distribution || [],
-      paragraphs: letterToLoad.paragraphs || [],
-      designationLine: letterToLoad.designationLine || '',
-      referenceWho: '',
-      referenceType: '',
-      referenceDate: '',
-      basicLetterReference: ''
-    }));
-    setReferences(letterToLoad.references || []);
-    setEnclosures(letterToLoad.enclosures || []);
-    setDistribution(letterToLoad.distribution || []);
-    setParagraphs(letterToLoad.paragraphs || []);
-  };
+    
+    const currentCompletion = stepCompletion[currentStep as keyof typeof stepCompletion] || 0;
+    const adjustedProgress = baseProgress + (currentCompletion * (stepPercentage / 100));
+    
+    return Math.min(adjustedProgress, 100);
+  }, [currentStep, validateStep1, validateStep2, validateStep3, validateStep4, validateStep5, validateStep6, validateStep7, validateStep8]);
 
 const generatePreviewContent = () => {
   const sortedParagraphs = [...paragraphs].sort((a, b) => a.id - b.id);
@@ -2196,15 +2671,33 @@ const generatePreviewContent = () => {
     };
   });
   
+  const hasReferences = references.some(r => r.trim() !== '');
+  const hasEnclosures = enclosures.some(e => e.trim() !== '');
+  const hasReports = reports.length > 0 && showReports;
+
   return {
+    // Pass all necessary data for a full preview
+    ...formData,
     header: {
-      ssic: formData.ssic_code || '',
-      sponsor: formData.sponsor_code || '',
-      date: formData.date_signed || ''
+      ssic: formData.ssic || '',
+      originatorCode: formData.originatorCode || '',
+      date: formData.date || ''
     },
-    subject: formData.subj || 'Subject Line',
+    subject: formData.subj || 'SUBJECT LINE',
     from: formData.from || '',
-    paragraphs: paragraphsWithCitations
+    paragraphs: paragraphsWithCitations,
+    references: hasReferences ? references : [],
+    enclosures: hasEnclosures ? enclosures : [],
+    reports: hasReports ? reports : [],
+    signature: {
+      name: formData.sig,
+      delegation: formData.delegationText,
+    },
+    distribution: {
+      pcn: pcn,
+      copyTo: copyToList,
+      type: distributionType,
+    },
   };
 };
 
@@ -2329,64 +2822,6 @@ const validateDirectiveReference = (formData: FormData): string[] => {
     setter((prev: string[]) => prev.map((item: string, i: number) => i === index ? value : item));
   };
 
-// Helper to get next order number for subsections
-  const getNextSubsectionOrder = () => {
-    const orders = [
-      adminSubsections.recordsManagement.show ? adminSubsections.recordsManagement.order : 0,
-      adminSubsections.privacyAct.show ? adminSubsections.privacyAct.order : 0
-    ].filter(o => o > 0);
-    
-    return orders.length > 0 ? Math.max(...orders) + 1 : 1;
-  };
-
-  // Add Records Management subsection
-  const addRecordsManagement = () => {
-    setAdminSubsections(prev => ({
-      ...prev,
-      recordsManagement: {
-        ...prev.recordsManagement,
-        show: true,
-        order: getNextSubsectionOrder()
-      }
-    }));
-  };
-
-  // Add Privacy Act subsection
-  const addPrivacyAct = () => {
-    setAdminSubsections(prev => ({
-      ...prev,
-      privacyAct: {
-        ...prev.privacyAct,
-        show: true,
-        order: getNextSubsectionOrder()
-      }
-    }));
-  };
-
-  // Remove Records Management subsection
-  const removeRecordsManagement = () => {
-    setAdminSubsections(prev => ({
-      ...prev,
-      recordsManagement: {
-        ...prev.recordsManagement,
-        show: false,
-        order: 0
-      }
-    }));
-  };
-
-  // Remove Privacy Act subsection
-  const removePrivacyAct = () => {
-    setAdminSubsections(prev => ({
-      ...prev,
-      privacyAct: {
-        ...prev.privacyAct,
-        show: false,
-        order: 0
-      }
-    }));
-  };
-
   // Get subsection letter (a, b) based on order
   const getSubsectionLetter = (type: 'recordsManagement' | 'privacyAct'): string => {
     const subsection = adminSubsections[type];
@@ -2400,161 +2835,6 @@ const validateDirectiveReference = (formData: FormData): string[] => {
     const index = activeSubsections.findIndex(s => s!.type === type);
     return String.fromCharCode(97 + index); // a, b, c...
   };
-
-  // Copy To list helpers
-  const addCopyToEntry = () => {
-    setCopyToList([...copyToList, { code: '', qty: 1 }]);
-  };
-
-  const removeCopyToEntry = (index: number) => {
-    setCopyToList(copyToList.filter((_, i) => i !== index));
-  };
-
-  const updateCopyToCode = (index: number, code: string) => {
-    // Only allow 7-digit numeric codes
-    if (code === '' || (/^\d{0,7}$/.test(code))) {
-      setCopyToList(copyToList.map((item, i) => i === index ? { ...item, code } : item));
-    }
-  };
-
-  const updateCopyToQty = (index: number, qty: number) => {
-    // Only allow quantities 1-99
-    if (qty >= 1 && qty <= 99) {
-      setCopyToList(copyToList.map((item, i) => i === index ? { ...item, qty } : item));
-    }
-  };
-  
-  const addParagraph = (type: 'main' | 'sub' | 'same' | 'up', afterId: number) => {
-    const currentParagraph = paragraphs.find(p => p.id === afterId);
-    if (!currentParagraph) return;
-    
-    let newLevel = 1;
-    switch(type) {
-      case 'main': newLevel = 1; break;
-      case 'same': newLevel = currentParagraph.level; break;
-      case 'sub': newLevel = Math.min(currentParagraph.level + 1, 8); break;
-      case 'up': newLevel = Math.max(currentParagraph.level - 1, 1); break;
-    }
-
-    
-    const newId = (paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) : 0) + 1;
-    const currentIndex = paragraphs.findIndex(p => p.id === afterId);
-    const newParagraphs = [...paragraphs];
-    newParagraphs.splice(currentIndex + 1, 0, { id: newId, level: newLevel, content: '' });
-    
-    // Validate numbering after adding
-    const numberingErrors = validateParagraphNumbering(newParagraphs);
-    if (numberingErrors.length > 0) {
-      // Show validation warnings but still allow the addition
-      console.warn('Paragraph numbering warnings:', numberingErrors);
-    }
-    
-    setParagraphs(newParagraphs);
-  };
-
-
-  const removeParagraph = (id: number) => {
-    const paragraphToRemove = paragraphs.find(p => p.id === id);
-    
-    // Prevent deletion of mandatory paragraphs except for Cancellation
-    if (paragraphToRemove?.isMandatory && paragraphToRemove?.title !== 'Cancellation') {
-      alert('Cannot delete mandatory paragraphs. Mandatory paragraphs like "Situation", "Mission", etc. are required for the document format.');
-      return;
-    }
-    
-    // Prevent deletion of the first paragraph (id === 1)
-    if (id === 1) {
-      alert('Cannot delete the first paragraph.');
-      return;
-    }
-    
-    setParagraphs(prev => prev.filter(p => p.id !== id));
-  };
-
-const addRecordsManagementParagraph = () => {
-    const adminLogisticsIndex = paragraphs.findIndex(p => p.title === 'Administration and Logistics');
-    if (adminLogisticsIndex === -1) {
-      alert('Cannot add Records Management: Administration and Logistics paragraph not found');
-      return;
-    }
-    const newId = (paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) : 0) + 1;
-    const newParagraph: ParagraphData = {
-      id: newId,
-      level: 2,
-      content: 'Records created as a result of this Order shall be managed in accordance with SECNAV M-5210.1, Department of the Navy Records Management Program, and disposed of IAW SSIC 5210.',
-      title: 'Records Management',
-      isMandatory: false
-    };
-    let insertIndex = adminLogisticsIndex + 1;
-    while (insertIndex < paragraphs.length && paragraphs[insertIndex].level === 2) {
-      insertIndex++;
-    }
-    const newParagraphs = [...paragraphs];
-    newParagraphs.splice(insertIndex, 0, newParagraph);
-    setParagraphs(newParagraphs);
-  };
-
-  const addPrivacyActParagraph = () => {
-    const adminLogisticsIndex = paragraphs.findIndex(p => p.title === 'Administration and Logistics');
-    if (adminLogisticsIndex === -1) {
-      alert('Cannot add Privacy Act: Administration and Logistics paragraph not found');
-      return;
-    }
-    const newId = (paragraphs.length > 0 ? Math.max(...paragraphs.map(p => p.id)) : 0) + 1;
-    const newParagraph: ParagraphData = {
-      id: newId,
-      level: 2,
-      content: 'Any misuse or unauthorized disclosure of Personally Identifiable Information (PII) may result in criminal and/or civil penalties (5 U.S.C. § 552a).',
-      title: 'Privacy Act',
-      isMandatory: false
-    };
-    let insertIndex = adminLogisticsIndex + 1;
-    while (insertIndex < paragraphs.length && paragraphs[insertIndex].level === 2) {
-      insertIndex++;
-    }
-    const newParagraphs = [...paragraphs];
-    newParagraphs.splice(insertIndex, 0, newParagraph);
-    setParagraphs(newParagraphs);
-  };
-const handleUnderlineText = (paragraphId: number, textarea: HTMLTextAreaElement) => {
-  if (!textarea) return;
-  
-  const start = textarea.selectionStart;
-  const end = textarea.selectionEnd;
-  const selectedText = textarea.value.substring(start, end);
-  
-  if (selectedText.length === 0) {
-    alert('Please select text to underline.');
-    return;
-  }
-  
-  // Check if text is already underlined
-  const isAlreadyUnderlined = selectedText.startsWith('<u>') && selectedText.endsWith('</u>');
-  
-  let newText;
-  if (isAlreadyUnderlined) {
-    // Remove underline tags
-    newText = selectedText.slice(3, -4); // Remove <u> and </u>
-  } else {
-    // Add underline tags
-    newText = `<u>${selectedText}</u>`;
-  }
-  
-  const beforeText = textarea.value.substring(0, start);
-  const afterText = textarea.value.substring(end);
-  const updatedContent = beforeText + newText + afterText;
-  
-  updateParagraphContent(paragraphId, updatedContent);
-  
-  // Restore cursor position
-  setTimeout(() => {
-    if (textarea) {
-      const newCursorPos = start + newText.length;
-      textarea.setSelectionRange(newCursorPos, newCursorPos);
-      textarea.focus();
-    }
-  }, 0);
-};
 
 
 const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
@@ -2594,52 +2874,6 @@ const validateAcronyms = useCallback((allParagraphs: ParagraphData[]) => {
 
     setParagraphs(finalParagraphs);
 }, []);
-
-
-  const updateParagraphContent = (id: number, content: string) => {
-    // Debug: Log the input to see what we're receiving
-    console.log('Input content:', JSON.stringify(content));
-    console.log('Character codes:', [...content].map(char => char.charCodeAt(0)));
-    
-    // Only replace non-breaking spaces and line breaks, preserve regular spaces (ASCII 32)
-    const cleanedContent = content
-      .replace(/\u00A0/g, ' ')  // Replace non-breaking spaces with regular spaces
-      .replace(/\u2007/g, ' ')  // Replace figure spaces with regular spaces
-      .replace(/\u202F/g, ' ')  // Replace narrow non-breaking spaces with regular spaces
-      .replace(/[\r\n]/g, ' '); // Replace line breaks with spaces
-      
-    console.log('Cleaned content:', JSON.stringify(cleanedContent));
-    
-    const newParagraphs = paragraphs.map(p => p.id === id ? { ...p, content: cleanedContent } : p)
-    setParagraphs(newParagraphs);
-    validateAcronyms(newParagraphs);
-  };
-
-  const moveParagraphUp = (id: number) => {
-    const currentIndex = paragraphs.findIndex(p => p.id === id);
-    if (currentIndex > 0) {
-      const currentPara = paragraphs[currentIndex];
-      const paraAbove = paragraphs[currentIndex - 1];
-
-      // Prevent a sub-paragraph from moving above its parent
-      if (currentPara.level > paraAbove.level) {
-        return; 
-      }
-
-      const newParagraphs = [...paragraphs];
-      [newParagraphs[currentIndex - 1], newParagraphs[currentIndex]] = [newParagraphs[currentIndex], newParagraphs[currentIndex - 1]];
-      setParagraphs(newParagraphs);
-    }
-  };
-
-  const moveParagraphDown = (id: number) => {
-    const currentIndex = paragraphs.findIndex(p => p.id === id);
-    if (currentIndex < paragraphs.length - 1) {
-      const newParagraphs = [...paragraphs];
-      [newParagraphs[currentIndex], newParagraphs[currentIndex + 1]] = [newParagraphs[currentIndex + 1], newParagraphs[currentIndex]];
-      setParagraphs(newParagraphs);
-    }
-  };
 
   const updateDelegationType = (value: string) => {
     let delegationText = '';
@@ -3480,53 +3714,6 @@ if (enclosures && enclosures.length > 0) {
   }
 };
 
-const generateDocument = useCallback(async () => { 
-  setIsGenerating(true);
-  try {
-    saveLetter(); // Save the current state before generating
-    
-    let doc;
-    let filename;
-    
-    // Use generateBasicLetter for all document types for now
-    doc = await generateBasicLetter();
-    
-    // Create filename using SSIC and Subject format (e.g., "1615.2 EXAMPLE SUBJECT.docx")
-    const ssic = formData.ssic || '';
-    const subject = formData.subj || 'Document';
-    
-    if (ssic && subject) {
-      // Clean the subject for filename (remove special characters but keep spaces)
-      const cleanSubject = subject
-        .replace(/[^a-zA-Z0-9\s]/g, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-      filename = `${ssic} ${cleanSubject}.docx`;
-    } else {
-      // Fallback if missing SSIC or subject
-      const baseFilename = subject || formData.documentType?.toUpperCase() || 'MarineCorpsDirective';
-      filename = `${baseFilename.replace(/[^a-zA-Z0-9]/g, '_')}.docx`;
-    }
-    
-    if(doc) {
-      console.log('Generating Word document blob...');
-      const blob = await Packer.toBlob(doc);
-      console.log('Word document blob created, size:', blob.size, 'bytes');
-      console.log('Filename:', filename);
-      
-      // Use our reliable download function
-      downloadFile(blob, filename);
-      console.log('Word document download initiated successfully');
-    }
-
-  } catch (error) {
-    console.error("Error generating document:", error);
-    alert("Error generating document: " + (error as Error).message);
-} finally {
-    setIsGenerating(false);
-  }
-}, [formData, saveLetter, generateBasicLetter]);
-
 const unitComboboxData = UNITS.map(unit => ({
   value: `${unit.uic}-${unit.ruc}-${unit.mcc}`,
   label: `${unit.unitName} (RUC: ${unit.ruc}, MCC: ${unit.mcc})`,
@@ -3549,102 +3736,8 @@ const clearUnitInfo = () => {
   setFormData(prev => ({ ...prev, line1: '', line2: '', line3: '' }));
 };
 
-
-
-// Voice-to-text functions
-const startVoiceInput = (paragraphId: number) => {
-  if (!speechRecognition) {
-    alert('Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.');
-    return;
-  }
-
-  // Stop any existing recognition
-  if (isListening) {
-    stopVoiceInput();
-    return;
-  }
-
-  setCurrentListeningParagraph(paragraphId);
-  setIsListening(true);
-
-  let finalTranscript = '';
-  let interimTranscript = '';
-
-  speechRecognition.onresult = (event: any) => {
-    finalTranscript = '';
-    interimTranscript = '';
-
-    for (let i = event.resultIndex; i < event.results.length; ++i) {
-      if (event.results[i].isFinal) {
-        finalTranscript += event.results[i][0].transcript;
-      } else {
-        interimTranscript += event.results[i][0].transcript;
-      }
-    }
-
-    // Update paragraph content with final transcript
-    if (finalTranscript) {
-      const currentParagraph = paragraphs.find(p => p.id === paragraphId);
-      if (currentParagraph) {
-        const newContent = currentParagraph.content + (currentParagraph.content ? ' ' : '') + finalTranscript;
-        updateParagraphContent(paragraphId, newContent);
-      }
-    }
-  };
-
-  speechRecognition.onerror = (event: any) => {
-    console.error('Speech recognition error:', event.error);
-    setIsListening(false);
-    setCurrentListeningParagraph(null);
-    
-    let errorMessage = 'Speech recognition error occurred.';
-    switch (event.error) {
-      case 'no-speech':
-        errorMessage = 'No speech detected. Please try again.';
-        break;
-      case 'audio-capture':
-        errorMessage = 'Microphone not available. Please check your microphone settings.';
-        break;
-      case 'not-allowed':
-        errorMessage = 'Microphone access denied. Please allow microphone access and try again.';
-        break;
-      case 'network':
-        errorMessage = 'Network error occurred. Please check your internet connection.';
-        break;
-    }
-    alert(errorMessage);
-  };
-
-  speechRecognition.onend = () => {
-    setIsListening(false);
-    setCurrentListeningParagraph(null);
-  };
-
-  speechRecognition.start();
-};
-
-const stopVoiceInput = () => {
-  if (speechRecognition && isListening) {
-    speechRecognition.stop();
-    setIsListening(false);
-    setCurrentListeningParagraph(null);
-  }
-};
-
-const clearParagraphContent = (paragraphId: number) => {
-  updateParagraphContent(paragraphId, '');
-};
-
-
-
-
-  return (
-    <div>
-      {/* Font Awesome CSS */}
-      <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
-      
-      {/* Custom CSS */}
-      <style jsx>{`
+  return (<>
+      <style jsx global>{`
         .marine-gradient-bg {
           background: linear-gradient(135deg, #000000 0%, #1C1C1C 100%);
           min-height: 100vh;
@@ -4332,2192 +4425,189 @@ const clearParagraphContent = (paragraphId: number) => {
             flex: 1 1 calc(33.333% - 6px) !important;
           }
         }
+          /* Wizard-specific mobile styles */
+        .wizard-step-content {
+          padding: 15px !important;
+        }
+
+        /* Step cards on mobile */
+        .wizard-step-content > div[style*="gridTemplateColumns"] {
+          grid-template-columns: 1fr !important;
+        }
+
+        /* Navigation buttons on mobile */
+        .wizard-nav-buttons {
+          flex-direction: column !important;
+          gap: 12px !important;
+        }
+
+        .wizard-nav-buttons button {
+          width: 100% !important;
+        }
+
+        /* Progress breadcrumbs on mobile - compact view */
+        .wizard-header-breadcrumbs {
+          font-size: 0.75rem !important;
+        }
+
+        .wizard-header-breadcrumbs > div {
+          width: 32px !important;
+          height: 32px !important;
+        }
+
+        /* MCBul cancellation section on mobile */
+        .mcbul-cancellation-types {
+          flex-direction: column !important;
+        }
+
+        .mcbul-cancellation-types label {
+          width: 100% !important;
+        }
       `}</style>
 
-      <div className="marine-gradient-bg">
+    <div className="marine-gradient-bg">
+      <div className="main-container">
         <div className="container mx-auto px-4 py-8">
-    {/* Header Title */}
-    <div className="form-section" style={{ textAlign: 'center', marginBottom: '30px' }}>
-      <h1 className="text-4xl font-bold text-center mb-2 text-black font-display tracking-wide">
-        Marine Corps Directives Formatter
-      </h1>
-      <p className="text-center text-gray-600 text-sm mb-1">by Semper Admin</p>
-      <p className="text-center text-gray-600 text-sm mb-0">Last Updated: 20251013</p>
-    </div>
+          {/* Wizard Header */}
+          <WizardHeader
+            currentStep={currentStep}
+            completedSteps={completedSteps}
+            progress={calculateProgress()}
+          />
 
-    {/* Document Type Selection - Side by Side */}
-    <div className="form-section">
-      <div className="section-legend">
-        <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
-        Choose Document Type
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-        {/* Orders Button - LEFT */}
-        <button
-          type="button"
-          className={`btn ${
-            formData.documentType === 'mco'
-              ? 'btn-danger'
-              : 'btn-outline-secondary'
-          }`}
-          onClick={() => setFormData(prev => ({ ...prev, documentType: 'mco' }))}
-          style={{
-            padding: '20px',
-            height: 'auto',
-            textAlign: 'left',
-            border: formData.documentType === 'mco' ? '3px solid #dc3545' : '2px solid #dee2e6',
-            borderRadius: '12px',
-            transition: 'all 0.3s ease',
-            background: formData.documentType === 'mco' 
-              ? 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)' 
-              : 'white',
-            color: formData.documentType === 'mco' ? 'white' : '#495057',
-            boxShadow: formData.documentType === 'mco' 
-              ? '0 8px 25px rgba(220, 53, 69, 0.3)' 
-              : '0 2px 10px rgba(0, 0, 0, 0.1)',
-            width: '100%'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-            <div style={{ fontSize: '2.5rem', opacity: 0.9, minWidth: '60px' }}>📋</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                Orders
-                {formData.documentType === 'mco' && (
-                  <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-                )}
-              </div>
-              <div style={{ fontSize: '0.95rem', opacity: 0.9, marginBottom: '10px', lineHeight: '1.4' }}>
-                Marine Corps Order - Permanent policy directives with long-term applicability.
-              </div>
-              <div style={{ fontSize: '0.85rem', opacity: 0.8, fontStyle: 'italic' }}>
-                → Permanent Policy
-              </div>
-            </div>
-          </div>
-        </button>
-
-        {/* Bulletins Button - RIGHT */}
-        <button
-          type="button"
-          className={`btn ${
-            formData.documentType === 'mcbul' 
-              ? 'btn-warning' 
-              : 'btn-outline-secondary'
-          }`}
-          onClick={() => setFormData(prev => ({ ...prev, documentType: 'mcbul' }))}
-          style={{
-            padding: '20px',
-            height: 'auto',
-            textAlign: 'left',
-            border: formData.documentType === 'mcbul' ? '3px solid #ffc107' : '2px solid #dee2e6',
-            borderRadius: '12px',
-            transition: 'all 0.3s ease',
-            background: formData.documentType === 'mcbul' 
-              ? 'linear-gradient(135deg, #ffc107 0%, #e0a800 100%)' 
-              : 'white',
-            color: formData.documentType === 'mcbul' ? 'white' : '#495057',
-            boxShadow: formData.documentType === 'mcbul' 
-              ? '0 8px 25px rgba(255, 193, 7, 0.3)' 
-              : '0 2px 10px rgba(0, 0, 0, 0.1)',
-            width: '100%'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-            <div style={{ fontSize: '2.5rem', opacity: 0.9, minWidth: '60px' }}>📢</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                Bulletins
-                {formData.documentType === 'mcbul' && (
-                  <i className="fas fa-check-circle" style={{ color: 'white', marginLeft: 'auto' }}></i>
-                )}
-              </div>
-              <div style={{ fontSize: '0.95rem', opacity: 0.9, marginBottom: '10px', lineHeight: '1.4' }}>
-                Marine Corps Bulletin - Temporary guidance with automatic cancellation dates.
-              </div>
-              <div style={{ fontSize: '0.85rem', opacity: 0.8, fontStyle: 'italic' }}>
-                → Temporary Guidance
-              </div>
-            </div>
-          </div>
-        </button>
-      </div>
-{/* Letterhead Format & Body Font - 2x2 Grid */}
-    <div className="form-section">
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px' }}>
-        
-        {/* LEFT COLUMN - Letterhead Format */}
-        <div>
+    {/* Step Content */}
           <div style={{ 
-            fontSize: '1.1rem', 
-            fontWeight: 'bold', 
-            marginBottom: '12px',
-            color: '#374151',
-            display: 'flex',
-            alignItems: 'center'
+            backgroundColor: 'rgba(255, 255, 255, 0.95)',
+            borderRadius: '20px',
+            padding: '30px',
+            boxShadow: '0 15px 35px rgba(0, 0, 0, 0.3)',
+            minHeight: '500px'
           }}>
-            <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
-            Letterhead Format
-          </div>
-          
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* United States Marine Corps */}
-            <button
-              type="button"
-              className={`btn ${formData.letterheadType === 'marine-corps' ? 'btn-danger' : 'btn-outline-secondary'}`}
-              onClick={() => setFormData(prev => ({ ...prev, letterheadType: 'marine-corps' }))}
-              style={{
-                padding: '15px',
-                textAlign: 'left',
-                border: formData.letterheadType === 'marine-corps' ? '3px solid #C41E3A' : '2px solid #dee2e6',
-                borderRadius: '10px',
-                background: formData.letterheadType === 'marine-corps' ? 'linear-gradient(135deg, #C41E3A 0%, #8B0000 100%)' : 'white',
-                color: formData.letterheadType === 'marine-corps' ? 'white' : '#495057',
-                width: '100%'
-              }}
-            >
-              <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                United States Marine Corps
-              </div>
-              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                3-line unit format • Black text
-              </div>
-            </button>
-                    
-            {/* Department of the Navy */}
-            <button
-              type="button"
-              className={`btn ${formData.letterheadType === 'navy' ? 'btn-primary' : 'btn-outline-secondary'}`}
-              onClick={() => setFormData(prev => ({ ...prev, letterheadType: 'navy' }))}
-              style={{
-                padding: '15px',
-                textAlign: 'left',
-                border: formData.letterheadType === 'navy' ? '3px solid #002D72' : '2px solid #dee2e6',
-                borderRadius: '10px',
-                background: formData.letterheadType === 'navy' ? 'linear-gradient(135deg, #002D72 0%, #0047AB 100%)' : 'white',
-                color: formData.letterheadType === 'navy' ? 'white' : '#495057',
-                width: '100%'
-              }}
-            >
-              <div style={{ fontWeight: 'bold', marginBottom: '5px' }}>
-                Department of the Navy
-              </div>
-              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                4-line HQMC format • Blue text
-              </div>
-            </button>
-          </div>
-        </div>
-
-        {/* RIGHT COLUMN - Body Font */}
-        <div>
-          <div style={{ 
-            fontSize: '1.1rem', 
-            fontWeight: 'bold', 
-            marginBottom: '12px',
-            color: '#374151',
-            display: 'flex',
-            alignItems: 'center'
-          }}>
-            <i className="fas fa-font" style={{ marginRight: '8px' }}></i>
-            Body Font
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Times New Roman */}
-            <button
-              type="button"
-              className={`btn ${formData.bodyFont === 'times' ? 'btn-success' : 'btn-outline-secondary'}`}
-              onClick={() => setFormData(prev => ({ ...prev, bodyFont: 'times' }))}
-              style={{
-                padding: '15px',
-                textAlign: 'left',
-                border: formData.bodyFont === 'times' ? '3px solid #28a745' : '2px solid #dee2e6',
-                borderRadius: '10px',
-                background: formData.bodyFont === 'times' ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'white',
-                color: formData.bodyFont === 'times' ? 'white' : '#495057',
-                width: '100%'
-              }}
-            >
-              <div style={{ fontWeight: 'bold', marginBottom: '5px', fontFamily: 'Times New Roman, serif' }}>
-                Times New Roman
-              </div>
-              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                Standard serif font • Traditional
-              </div>
-            </button>
-
-            {/* Courier New */}
-            <button
-              type="button"
-              className={`btn ${formData.bodyFont === 'courier' ? 'btn-success' : 'btn-outline-secondary'}`}
-              onClick={() => setFormData(prev => ({ ...prev, bodyFont: 'courier' }))}
-              style={{
-                padding: '15px',
-                textAlign: 'left',
-                border: formData.bodyFont === 'courier' ? '3px solid #28a745' : '2px solid #dee2e6',
-                borderRadius: '10px',
-                background: formData.bodyFont === 'courier' ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'white',
-                color: formData.bodyFont === 'courier' ? 'white' : '#495057',
-                width: '100%'
-              }}
-            >
-              <div style={{ fontWeight: 'bold', marginBottom: '5px', fontFamily: 'Courier New, monospace' }}>
-                Courier New
-              </div>
-              <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
-                Monospaced font • Typewriter style
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-    
-
-
-    {/* Letterhead and Font Card */}
-
-          {/* MCBul-Specific Fields */}
-          {(formData.documentType === 'mcbul') && (
-             <div className="form-section">
-                <div className="section-legend" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)', border: '2px solid rgba(239, 68, 68, 0.3)' }}>
-                    <i className="fas fa-calendar-times" style={{ marginRight: '8px' }}></i>
-                    Bulletin Cancellation Details
-                </div>
-
-                {/* Cancellation Type Selector */}
-                <div className="input-group">
-                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
-                        <i className="fas fa-list-ul" style={{ marginRight: '8px' }}></i>
-                        Cancellation Type:
-                    </span>
-                    <select
-                        className="form-control"
-                        value={formData.cancellationType || 'contingent'}
-                        onChange={(e) => setFormData(prev => ({ 
-                            ...prev, 
-                            cancellationType: e.target.value as 'contingent' | 'fixed',
-                            // Clear contingency description if switching to fixed
-                            cancellationContingency: e.target.value === 'fixed' ? '' : prev.cancellationContingency
-                        }))}
-                        required
-                    >
-                        <option value="contingent">Contingent (FRP - For Record Purposes)</option>
-                        <option value="fixed">Fixed Date</option>
-                    </select>
-                </div>
-
-                {/* Cancellation Date Input */}
-                <div className="input-group">
-                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
-                        <i className="fas fa-clock" style={{ marginRight: '8px' }}></i>
-                        Cancellation Date:
-                    </span>
-                    <input 
-                        className="form-control"
-                        type="text" 
-                        placeholder={formData.cancellationType === 'contingent' ? "e.g., Oct 2025" : "e.g., Oct 2025"}
-                        value={formData.cancellationDate || ''}
-                        onChange={(e) => setFormData(prev => ({ ...prev, cancellationDate: parseAndFormatDate(e.target.value) }))}
-                        required
-                    />
-                </div>
-                <div style={{
-                  marginTop: '0.5rem',
-                  padding: '0.5rem',
-                  backgroundColor: '#fef3c7',
-                  borderLeft: '4px solid #f59e0b',
-                  color: '#92400e',
-                  fontSize: '0.875rem',
-                  borderRadius: '0 0.5rem 0.5rem 0'
-                }}>
-                  <i className="fas fa-info-circle" style={{ marginRight: '0.5rem' }}></i>
-                  Bulletin cancels on the <strong>last day</strong> of the specified month.
-                  Format: <strong>MMM YYYY</strong> (e.g., Oct 2025)
-                </div>
-
-                {/* Conditional Contingency Description - Only show for contingent type */}
-                {formData.cancellationType === 'contingent' && (
-                <>
-                <div className="input-group">
-                    <span className="input-group-text" style={{ background: 'linear-gradient(45deg, #dc2626, #ef4444)' }}>
-                        <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
-                        Contingency Condition:
-                    </span>
-                    <textarea 
-                        className="form-control"
-                        rows={3}
-                        placeholder="Describe the contingency that will trigger early cancellation (e.g., This Bulletin is canceled when incorporated in MCO 5200.1)"
-                            value={formData.cancellationContingency || ''}
-                            onChange={(e) => setFormData(prev => ({ ...prev, cancellationContingency: e.target.value }))}
-                            style={{ minHeight: '80px' }}
-                        />
-                    </div>
-                    <div style={{
-                      marginTop: '0.5rem',
-                      padding: '0.5rem',
-                      backgroundColor: '#dbeafe',
-                      borderLeft: '4px solid #3b82f6',
-                      color: '#1e40af',
-                      fontSize: '0.875rem',
-                      borderRadius: '0 0.5rem 0.5rem 0'
-                    }}>
-                      <i className="fas fa-lightbulb" style={{ marginRight: '0.5rem' }}></i>
-                      <strong>Contingency Note:</strong> This condition allows the bulletin to be canceled early
-                      once the event occurs, without waiting for the cancellation date. This text will appear
-                      as the <strong>final paragraph</strong> of your bulletin.
-                    </div>
-                    </>
-                    
-                )}
-                  
-                {/* Information Box for MCBul Cancellation */}
-                <div style={{
-                   marginTop: '1rem',
-                   padding: '0.75rem',
-                   backgroundColor: '#fef2f2',
-                   borderLeft: '4px solid #dc2626',
-                   color: '#dc2626',
-                   borderRadius: '0 0.5rem 0.5rem 0'
-                 }}>
-                    <div style={{ display: 'flex' }}>
-                        <div style={{ paddingTop: '0.25rem' }}>
-                            <i className="fas fa-info-circle" style={{ fontSize: '1.125rem', marginRight: '0.5rem' }}></i>
-                        </div>
-                        <div>
-                            <p style={{ fontWeight: 'bold', margin: 0 }}>Bulletin Cancellation Requirements</p>
-                            <p style={{ fontSize: '0.875rem', margin: '0.25rem 0 0 0' }}>
-                                {formData.cancellationType === 'contingent' 
-                                    ? "Contingent cancellations use 'FRP' (For Ready Personnel) and require a detailed description of the contingency condition."
-                                    : "Fixed date cancellations specify an exact date when the bulletin will be cancelled."
-                                }
-                            </p>
-                            <p style={{ fontSize: '0.75rem', margin: '0.5rem 0 0 0', fontStyle: 'italic' }}>
-                                The cancellation date will appear in the upper right margin of the generated document.
-                            </p>
-                        </div>
-                    </div>
-                </div>
-             </div>
-          )}
-
-
-         {/* Unit Information Section */}
-         <div className="form-section">
-           <div className="section-legend">
-             <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
-             Unit Information
-           </div>
-
-            <div className="input-group">
-                <span className="input-group-text" style={{ minWidth: '150px' }}>
-                  <i className="fas fa-search" style={{ marginRight: '8px' }}></i>
-                  Find Unit:
-                </span>
-                <Combobox
-                  items={unitComboboxData}
-                  onSelect={handleUnitSelect}
-                  placeholder="Search for a unit..."
-                  searchMessage="No unit found."
-                  inputPlaceholder="Search units by name, RUC, MCC..."
-                />
-                <button
-                  className="btn btn-danger"
-                  type="button"
-                  onClick={clearUnitInfo}
-                  title="Clear Unit Information"
-                  style={{ borderRadius: '0 8px 8px 0' }}
-                >
-                  <i className="fas fa-times"></i>
-                </button>
-            </div>
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
-                Unit Name:
-              </span>
-              <input 
-                className="form-control" 
-                type="text" 
-                placeholder="e.g., HEADQUARTERS, 1ST MARINE DIVISION"
-                value={formData.line1}
-                onChange={(e) => setFormData(prev => ({ ...prev, line1: autoUppercase(e.target.value) }))}
+            {currentStep === 1 && (
+              <Step1Formatting
+                formData={formData}
               />
-            </div>
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-road" style={{ marginRight: '8px' }}></i>
-                Address Line 1:
-              </span>
-              <input 
-                className="form-control" 
-                type="text" 
-                placeholder="e.g., BOX 5555"
-                value={formData.line2}
-                onChange={(e) => setFormData(prev => ({ ...prev, line2: autoUppercase(e.target.value) }))}
-              />
-            </div>
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-map" style={{ marginRight: '8px' }}></i>
-                Address Line 2:
-              </span>
-              <input 
-                className="form-control" 
-                type="text" 
-                placeholder="e.g., CAMP PENDLETON, CA 92055-5000"
-                value={formData.line3}
-                onChange={(e) => setFormData(prev => ({ ...prev, line3: autoUppercase(e.target.value) }))}
-              />
-            </div>
-          </div>
-
-          {/* Required Information */}
-          <div className="form-section">
-            <div className="section-legend">
-              <i className="fas fa-exclamation-circle" style={{ marginRight: '8px' }}></i>
-              Required Information
-            </div>
-
-            {/* ✅… NEW: Designation Line Input - Added at the top */}
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
-                Designation Line:
-              </span>
-              <input 
-                className="form-control"
-                type="text" 
-                placeholder="e.g., MARINE CORPS ORDER 5215.1K"
-                value={formData.designationLine || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, designationLine: autoUppercase(e.target.value) }))}
-              />
-            </div>
-
-
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-hashtag" style={{ marginRight: '8px' }}></i>
-                SSIC:
-              </span>
-              <input 
-                className="form-control"
-                type="text" 
-                placeholder="e.g., 5215.1K, 1000.5, 5200R.15"
-                value={formData.ssic}
-                onChange={(e) => {
-                  const value = e.target.value;
-                  setFormData(prev => ({ ...prev, ssic: value }));
-                }}
-              />
-            </div>
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-code" style={{ marginRight: '8px' }}></i>
-                Originator's Code:
-              </span>
-              <input 
-                className="form-control" 
-                type="text" 
-                placeholder="e.g., G-1"
-                value={formData.originatorCode}
-                onChange={(e) => setFormData(prev => ({ ...prev, originatorCode: autoUppercase(e.target.value) }))}
-              />
-            </div>
-            
-
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-user" style={{ marginRight: '8px' }}></i>
-                From:
-              </span>
-              <input 
-                className={`form-control ${validation.from.isValid ? 'is-valid' : formData.from && !validation.from.isValid ? 'is-invalid' : ''}`}
-                type="text" 
-                placeholder="Commanding Officer, Marine Corps Base or Secretary of the Navy"
-                value={formData.from}
-                onChange={(e) => setFormData(prev => ({ ...prev, from: e.target.value }))}
-              />
-            </div>
-            {validation.from.message && (
-              <div className={`feedback-message ${validation.from.isValid ? 'text-success' : 'text-warning'}`}>
-                <i className={`fas ${validation.from.isValid ? 'fa-check' : 'fa-exclamation-triangle'}`} style={{ marginRight: '4px' }}></i>
-                {validation.from.message}
-              </div>
-            )}
-
-            {/* ✅… REMOVED: To input field and its validation */}
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-book" style={{ marginRight: '8px' }}></i>
-                Subject:
-              </span>
-              <input 
-                className={`form-control ${validation.subj.isValid ? 'is-valid' : formData.subj && !validation.subj.isValid ? 'is-invalid' : ''}`}
-                type="text" 
-                placeholder="SUBJECT LINE IN ALL CAPS"
-                value={formData.subj}
-                onChange={(e) => {
-                  const value = autoUppercase(e.target.value);
-                  setFormData(prev => ({ ...prev, subj: value }));
-                  validateSubject(value);
-                }}
-              />
-            </div>
-            {validation.subj.message && (
-              <div className={`feedback-message ${validation.subj.isValid ? 'text-success' : 'text-warning'}`}>
-                <i className={`fas ${validation.subj.isValid ? 'fa-check' : 'fa-exclamation-triangle'}`} style={{ marginRight: '4px' }}></i>
-                {validation.subj.message}
-              </div>
             )}
             
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-share-alt" style={{ marginRight: '8px' }}></i>
-                Distribution Statement:
-              </span>
-              <select
-                className="form-control"
-                value={formData.distributionStatement.code}
-                onChange={(e) => setFormData(prev => ({
-                  ...prev,
-                  distributionStatement: {
-                    code: e.target.value as 'A' | 'B' | 'C' | 'D' | 'E' | 'F' | 'X',
-                    reason: '',
-                    dateOfDetermination: '',
-                    originatingCommand: ''
-                  }
-                }))}
-              >
-                {Object.entries(DISTRIBUTION_STATEMENTS).map(([key, statement]) => (
-                  <option key={key} value={key}>
-                    Statement {key} - {statement.description}
-                  </option>
-                ))}
-              </select>
-            </div>
-            
-            <div style={{ 
-              fontSize: '0.875rem', 
-              color: '#495057', 
-              marginTop: '8px', 
-              marginBottom: '1rem',
-              padding: '12px',
-              backgroundColor: '#f8f9fa',
-              border: '1px solid #dee2e6',
-              borderRadius: '6px'
-            }}>
-              <strong>Full Statement:</strong><br/>
-              {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].text}
-            </div>
-            
-            {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && (
-              <div style={{ marginBottom: '1rem' }}>
-                <div style={{ 
-                  fontSize: '0.9rem', 
-                  fontWeight: '600', 
-                  marginBottom: '12px',
-                  color: '#dc3545'
-                }}>
-                  <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
-                  Required Fill-in Information:
-                </div>
-                
-                {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && 
-                 'fillInFields' in DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] &&
-                 (DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] as any).fillInFields?.includes('reason') && (
-                  <div className="input-group" style={{ marginBottom: '8px' }}>
-                    <span className="input-group-text">
-                      <i className="fas fa-info-circle" style={{ marginRight: '8px' }}></i>
-                      Reason for Restriction:
-                    </span>
-                    <select
-                      className="form-control"
-                      value={formData.distributionStatement.reason || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        distributionStatement: {
-                          ...prev.distributionStatement,
-                          reason: e.target.value
-                        }
-                      }))}
-                    >
-                      <option value="">Select reason...</option>
-                      {COMMON_RESTRICTION_REASONS.map(reason => (
-                        <option key={reason} value={reason}>{reason}</option>
-                      ))}
-                      <option value="custom">Custom reason (type below)</option>
-                    </select>
-                  </div>
-                )}
-                
-                {formData.distributionStatement.reason === 'custom' && (
-                  <div className="input-group" style={{ marginBottom: '8px' }}>
-                    <span className="input-group-text">
-                      <i className="fas fa-edit" style={{ marginRight: '8px' }}></i>
-                      Custom Reason:
-                    </span>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="Enter custom reason for restriction"
-                      value={formData.distributionStatement.reason || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        distributionStatement: {
-                          ...prev.distributionStatement,
-                          reason: e.target.value
-                        }
-                      }))}
-                    />
-                  </div>
-                )}
-                
-                {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && 
-                 'fillInFields' in DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] &&
-                 (DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] as any).fillInFields?.includes('dateOfDetermination') && (
-                  <div className="input-group" style={{ marginBottom: '8px' }}>
-                    <span className="input-group-text">
-                      <i className="fas fa-calendar" style={{ marginRight: '8px' }}></i>
-                      Date of Determination:
-                    </span>
-                    <input
-                      type="date"
-                      className="form-control"
-                      value={formData.distributionStatement.dateOfDetermination || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        distributionStatement: {
-                          ...prev.distributionStatement,
-                          dateOfDetermination: e.target.value
-                        }
-                      }))}
-                    />
-                  </div>
-                )}
-                
-                {DISTRIBUTION_STATEMENTS[formData.distributionStatement.code].requiresFillIns && 
-                 'fillInFields' in DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] &&
-                 (DISTRIBUTION_STATEMENTS[formData.distributionStatement.code] as any).fillInFields?.includes('originatingCommand') && (
-                  <div className="input-group" style={{ marginBottom: '8px' }}>
-                    <span className="input-group-text">
-                      <i className="fas fa-building" style={{ marginRight: '8px' }}></i>
-                      Originating Command:
-                    </span>
-                    <input
-                      type="text"
-                      className="form-control"
-                      placeholder="e.g., Headquarters Marine Corps"
-                      value={formData.distributionStatement.originatingCommand || ''}
-                      onChange={(e) => setFormData(prev => ({
-                        ...prev,
-                        distributionStatement: {
-                          ...prev.distributionStatement,
-                          originatingCommand: e.target.value
-                        }
-                      }))}
-                    />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Optional Items Section */}
-          <div className="form-section">
-            <div className="section-legend">
-              <i className="fas fa-plus-circle" style={{ marginRight: '8px' }}></i>
-              Optional Items
-            </div>
-        
-            
-            
-            <Card style={{ marginBottom: '1.5rem' }}>
-              <CardHeader>
-                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                  <i className="fas fa-book" style={{ marginRight: '8px' }}></i>
-                  References
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="radio-group">
-                  <label style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="radio"
-                      name="ifRef"
-                      value="yes"
-                      checked={showRef}
-                      onChange={() => setShowRef(true)}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                    />
-                    <span style={{ fontSize: '1.1rem' }}>Yes</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center' }}>
-                    <input
-                      type="radio"
-                      name="ifRef"
-                      value="no"
-                      checked={!showRef}
-                      onChange={() => { setShowRef(false); setReferences(['']); }}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                    />
-                    <span style={{ fontSize: '1.1rem' }}>No</span>
-                  </label>
-              </CardContent>
-
-                {showRef && (
-                  <>
-                    {/* ⭐ PROGRESS BAR - ADD THIS ENTIRE SECTION ⭐ */}
-                    {(() => {
-                      const nonEmptyCount = references.filter(ref => ref.trim().length > 0).length;
-                      const MAX_REFERENCES_WARNING = 11;
-                      const MAX_REFERENCES_ERROR = 13;
-                      
-                      if (nonEmptyCount === 0) return null;
-                      
-                      return (
-                        <div style={{
-                          padding: '16px',
-                          backgroundColor: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#fee2e2' : 
-                                         nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fef3c7' : '#d1fae5',
-                          borderRadius: '8px',
-                          marginBottom: '16px',
-                          border: `3px solid ${nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' : 
-                                              nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fbbf24' : '#10b981'}`,
-                          boxShadow: nonEmptyCount >= MAX_REFERENCES_ERROR ? '0 4px 12px rgba(220, 38, 38, 0.3)' :
-                                    nonEmptyCount >= MAX_REFERENCES_WARNING ? '0 4px 12px rgba(251, 191, 36, 0.3)' :
-                                    '0 4px 12px rgba(16, 185, 129, 0.2)'
-                        }}>
-                          {/* Header with Count */}
-                          <div style={{ 
-                            display: 'flex', 
-                            justifyContent: 'space-between', 
-                            alignItems: 'center', 
-                            marginBottom: '12px' 
-                          }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <i className={`fas ${
-                                nonEmptyCount >= MAX_REFERENCES_ERROR ? 'fa-exclamation-circle' :
-                                nonEmptyCount >= MAX_REFERENCES_WARNING ? 'fa-exclamation-triangle' :
-                                'fa-check-circle'
-                              }`} style={{ 
-                                fontSize: '20px',
-                                color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' :
-                                       nonEmptyCount >= MAX_REFERENCES_WARNING ? '#f59e0b' :
-                                       '#10b981'
-                              }}></i>
-                              <span style={{ 
-                                fontWeight: '700', 
-                                fontSize: '18px',
-                                color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
-                                       nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
-                                       '#065f46'
-                              }}>
-                                References Used: {nonEmptyCount}/13
-                              </span>
-                            </div>
-                            
-                            <span style={{ 
-                              fontSize: '14px', 
-                              fontWeight: '600',
-                              color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
-                                     nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
-                                     '#065f46'
-                            }}>
-                              {nonEmptyCount >= MAX_REFERENCES_ERROR ? '🚫 Maximum Reached' : 
-                               nonEmptyCount >= MAX_REFERENCES_WARNING ? '⚠️ Approaching Limit' : 
-                               '✅ Good Status'}
-                            </span>
-                          </div>
-                          
-                          {/* Progress Bar */}
-                          <div style={{ 
-                            width: '100%', 
-                            height: '12px', 
-                            backgroundColor: '#e5e7eb',
-                            borderRadius: '6px',
-                            overflow: 'hidden',
-                            marginBottom: '8px',
-                            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
-                          }}>
-                            <div style={{
-                              width: `${(nonEmptyCount / MAX_REFERENCES_ERROR) * 100}%`,
-                              height: '100%',
-                              backgroundColor: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#dc2626' : 
-                                             nonEmptyCount >= MAX_REFERENCES_WARNING ? '#fbbf24' : 
-                                             '#10b981',
-                              transition: 'all 0.3s ease',
-                              boxShadow: nonEmptyCount >= MAX_REFERENCES_ERROR ? '0 0 10px rgba(220, 38, 38, 0.5)' :
-                                        nonEmptyCount >= MAX_REFERENCES_WARNING ? '0 0 10px rgba(251, 191, 36, 0.5)' :
-                                        '0 0 10px rgba(16, 185, 129, 0.3)'
-                            }}></div>
-                          </div>
-                          
-                          {/* Status Message */}
-                          <div style={{ 
-                            fontSize: '13px',
-                            fontWeight: '500',
-                            color: nonEmptyCount >= MAX_REFERENCES_ERROR ? '#991b1b' :
-                                   nonEmptyCount >= MAX_REFERENCES_WARNING ? '#92400e' :
-                                   '#065f46',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}>
-                            {nonEmptyCount >= MAX_REFERENCES_ERROR ? (
-                              <>
-                                <i className="fas fa-ban"></i>
-                                <span>References at maximum capacity - may exceed ½ page limit</span>
-                              </>
-                            ) : nonEmptyCount >= MAX_REFERENCES_WARNING ? (
-                              <>
-                                <i className="fas fa-exclamation-triangle"></i>
-                                <span>Approaching ½ page limit - consider consolidating references</span>
-                              </>
-                            ) : (
-                              <>
-                                <i className="fas fa-check"></i>
-                                <span>References will comfortably fit on ½ page</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                    {/* ⭐ END OF PROGRESS BAR ⭐ */}
-                    
-                    <div className="dynamic-section">
-                      <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                        <i className="fas fa-bookmark" style={{ marginRight: '8px' }}></i>
-                        Enter Reference(s):
-                      </label>
-                    {references.map((ref, index) => (
-                      <div key={index} className="input-group" style={{ width: '100%', display: 'flex' }}>
-                        <span className="input-group-text" style={{
-                          minWidth: '60px',
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          display: 'flex',
-                          background: 'linear-gradient(135deg, #b8860b, #ffd700)',
-                          color: 'white',
-                          fontWeight: '600',
-                          borderRadius: '8px 0 0 8px',
-                          border: '2px solid #b8860b',
-                          flexShrink: 0,
-                          textAlign: 'center'
-                        }}>
-                          ({getReferenceLetter(index, formData.startingReferenceLevel)})
-                        </span>
-                        <input
-                          className="form-control"
-                          type="text"
-                          placeholder="📚 Enter reference information (e.g., NAVADMIN 123/24, OPNAVINST 5000.1)"
-                          value={ref}
-                          onChange={(e) => updateItem(index, e.target.value, setReferences)}
-                          style={{
-                            fontSize: '1rem',
-                            padding: '12px 16px',
-                            border: '2px solid #e0e0e0',
-                            borderLeft: 'none',
-                            borderRadius: '0',
-                            transition: 'all 0.3s ease',
-                            backgroundColor: '#fafafa',
-                            flex: '1',
-                            minWidth: '0'
-                          }}
-                          onFocus={(e) => {
-                            e.target.style.borderColor = '#b8860b';
-                            e.target.style.backgroundColor = '#fff';
-                            e.target.style.boxShadow = '0 0 0 3px rgba(184, 134, 11, 0.1)';
-                          }}
-                          onBlur={(e) => {
-                            e.target.style.borderColor = '#e0e0e0';
-                            e.target.style.backgroundColor = '#fafafa';
-                            e.target.style.boxShadow = 'none';
-                          }}
-                        />
-                        {index === references.length - 1 ? (
-                          <button
-                            className="btn btn-primary"
-                            type="button"
-                            onClick={() => {
-                              const nonEmptyCount = references.filter(ref => ref.trim().length > 0).length;
-                              if (nonEmptyCount >= 13) {
-                                alert('Maximum of 13 references reached to ensure they fit on ½ page.');
-                                return;
-                              }
-                              addItem(setReferences);
-                            }}
-                            disabled={references.filter(ref => ref.trim().length > 0).length >= 13}
-                            style={{
-                              borderRadius: '0 8px 8px 0',
-                              flexShrink: 0,
-                              background: references.filter(ref => ref.trim().length > 0).length >= 13 
-                                ? 'linear-gradient(135deg, #6c757d, #495057)' 
-                                : 'linear-gradient(135deg, #b8860b, #ffd700)',
-                              border: references.filter(ref => ref.trim().length > 0).length >= 13 
-                                ? '2px solid #6c757d' 
-                                : '2px solid #b8860b',
-                              color: 'white',
-                              fontWeight: '600',
-                              padding: '8px 16px',
-                              transition: 'all 0.3s ease',
-                              opacity: references.filter(ref => ref.trim().length > 0).length >= 13 ? 0.6 : 1,
-                              cursor: references.filter(ref => ref.trim().length > 0).length >= 13 ? 'not-allowed' : 'pointer'
-                            }}
-                            onMouseEnter={(e) => {
-                              (e.target as HTMLButtonElement).style.background = 'linear-gradient(135deg, #ffd700, #b8860b)';
-                              (e.target as HTMLButtonElement).style.transform = 'translateY(-1px)';
-                            }}
-                            onMouseLeave={(e) => {
-                              (e.target as HTMLButtonElement).style.background = 'linear-gradient(135deg, #b8860b, #ffd700)';
-                              (e.target as HTMLButtonElement).style.transform = 'translateY(0)';
-                            }}
-                          >
-                            <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
-                            {references.filter(ref => ref.trim().length > 0).length >= 13 ? 'Max Reached' : 'Add'}
-                          </button>
-                        ) : (
-                          <button
-                            className="btn btn-danger"
-                            type="button"
-                            onClick={() => removeItem(index, setReferences)}
-                            style={{
-                              borderRadius: '0 8px 8px 0',
-                              flexShrink: 0
-                            }}
-                          >
-                            <i className="fas fa-trash" style={{ marginRight: '4px' }}></i>
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-              </>
-            )}
-            </Card>
-
-            <Card style={{ marginBottom: '1.5rem' }}>
-              <CardHeader>
-                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                  <i className="fas fa-paperclip" style={{ marginRight: '8px' }}></i>
-                  Enclosures
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="radio-group">
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="ifEncl"
-                      value="yes"
-                      checked={showEncl}
-                      onChange={() => setShowEncl(true)}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>Yes</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="ifEncl"
-                      value="no"
-                      checked={!showEncl}
-                      onChange={() => { setShowEncl(false); setEnclosures(['']); }}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>No</span>
-                  </label>
-              </CardContent>  
-
-                {showEncl && (
-                  <div className="dynamic-section">
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                      <i className="fas fa-paperclip" style={{ marginRight: '8px' }}></i>
-                      Enter Enclosure(s):
-                    </label>
-                    {enclosures.map((encl, index) => (
-                      <div key={index} className="input-group" style={{ width: '100%', display: 'flex' }}>
-                        <span className="input-group-text" style={{ 
-                          backgroundColor: '#f59e0b',
-                          color: 'white',
-                          fontWeight: 'bold',
-                          borderColor: '#f59e0b',
-                          minWidth: '60px',
-                          justifyContent: 'center',
-                          borderRadius: '8px 0 0 8px'
-                        }}>
-                          ({getEnclosureNumber(index, formData.startingEnclosureNumber)})
-                        </span>
-                        <input 
-                          className="form-control" 
-                          type="text" 
-                          placeholder="🔗 Enter enclosure details (e.g., Training Certificate, Medical Records)"
-                          value={encl}
-                          onChange={(e) => {
-                            const newEnclosures = [...enclosures];
-                            newEnclosures[index] = e.target.value;
-                            setEnclosures(newEnclosures);
-                          }}
-                          style={{
-                            borderRadius: '0',
-                            borderLeft: 'none',
-                            borderRight: 'none'
-                          }}
-                        />
-                        {index === enclosures.length - 1 ? (
-                          <button 
-                            className="btn btn-primary"
-                            type="button" 
-                            onClick={() => setEnclosures([...enclosures, ''])}
-                            style={{
-                              borderRadius: '0 8px 8px 0',
-                              flexShrink: 0
-                            }}
-                          >
-                            <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
-                            Add
-                          </button>
-                        ) : (
-                          <button 
-                            className="btn btn-danger"
-                            type="button" 
-                            onClick={() => {
-                              const newEnclosures = enclosures.filter((_, i) => i !== index);
-                              setEnclosures(newEnclosures.length > 0 ? newEnclosures : ['']);
-                            }}
-                            style={{
-                              borderRadius: '0 8px 8px 0',
-                              flexShrink: 0
-                            }}
-                          >
-                            <i className="fas fa-trash" style={{ marginRight: '4px' }}></i>
-                            Remove
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-            </Card>
-
-           
-            {/* Reports Required Card */}
-            <Card style={{ marginBottom: '1.5rem' }}>
-              <CardHeader>
-                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                  <i className="fas fa-file-alt" style={{ marginRight: '8px' }}></i>
-                  Reports Required
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="radio-group">
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="ifReports"
-                      value="yes"
-                      checked={showReports}
-                      onChange={() => setShowReports(true)}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>Yes</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="ifReports"
-                      value="no"
-                      checked={!showReports}
-                      onChange={() => { setShowReports(false); setReports([]); }}
-                      style={{ marginRight: '8px', transform: 'scale(1.25)', cursor: 'pointer' }}
-                    />
-                    <span style={{ fontSize: '1.1rem', cursor: 'pointer' }}>No</span>
-                  </label>
-              </CardContent>
-
-              {showReports && (
-                <>
-                  <div className="dynamic-section">
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                      <i className="fas fa-clipboard-list" style={{ marginRight: '8px' }}></i>
-                      Reports Required:
-                    </label>
-                    
-                    {reports.map((report, index) => (
-                      <div key={report.id} style={{ 
-                        padding: '1rem', 
-                        border: '2px solid #e5e7eb', 
-                        marginBottom: '1rem',
-                        borderRadius: '8px',
-                        backgroundColor: '#fafafa'
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                          <strong style={{ fontSize: '1.1rem', color: '#1f2937' }}>
-                            <i className="fas fa-file" style={{ marginRight: '8px', color: '#6366f1' }}></i>
-                            Report {toRomanNumeral(index + 1)}
-                          </strong>
-                          <button 
-                            onClick={() => {
-                              setReports(reports.filter((_, i) => i !== index));
-                            }}
-                            style={{ 
-                              color: '#dc2626', 
-                              background: 'none', 
-                              border: 'none', 
-                              cursor: 'pointer',
-                              fontSize: '1.1rem',
-                              padding: '4px 8px'
-                            }}
-                            title="Remove report"
-                          >
-                            <i className="fas fa-trash"></i>
-                          </button>
-                        </div>
-                        
-                        <div className="input-group" style={{ marginBottom: '0.75rem' }}>
-                          <span className="input-group-text" style={{ 
-                            backgroundColor: '#6366f1',
-                            color: 'white',
-                            fontWeight: 'bold',
-                            borderColor: '#6366f1',
-                            minWidth: '140px'
-                          }}>
-                            <i className="fas fa-heading" style={{ marginRight: '8px' }}></i>
-                            Report Title:
-                          </span>
-                          <input 
-                            className="form-control"
-                            type="text"
-                            value={report.title}
-                            onChange={(e) => {
-                              const updated = [...reports];
-                              updated[index] = { ...updated[index], title: e.target.value };
-                              setReports(updated);
-                            }}
-                            placeholder="e.g., Quarterly Manpower Update"
-                          />
-                        </div>
-                        
-                        <div className="input-group" style={{ marginBottom: '0.75rem' }}>
-                          <span className="input-group-text" style={{ 
-                            backgroundColor: '#8b5cf6',
-                            color: 'white',
-                            fontWeight: 'bold',
-                            borderColor: '#8b5cf6',
-                            minWidth: '140px'
-                          }}>
-                            <i className="fas fa-barcode" style={{ marginRight: '8px' }}></i>
-                            Control Symbol:
-                          </span>
-                          <input 
-                            className="form-control"
-                            type="text"
-                            value={report.controlSymbol}
-                            onChange={(e) => {
-                              const updated = [...reports];
-                              updated[index] = { ...updated[index], controlSymbol: e.target.value.toUpperCase() };
-                              setReports(updated);
-                            }}
-                            placeholder="e.g., MC-5215-01"
-                            disabled={report.exempt}
-                            style={{
-                              backgroundColor: report.exempt ? '#f3f4f6' : 'white'
-                            }}
-                          />
-                        </div>
-                        
-                        <div className="input-group" style={{ marginBottom: '0.75rem' }}>
-                          <span className="input-group-text" style={{ 
-                            backgroundColor: '#ec4899',
-                            color: 'white',
-                            fontWeight: 'bold',
-                            borderColor: '#ec4899',
-                            minWidth: '140px'
-                          }}>
-                            <i className="fas fa-paragraph" style={{ marginRight: '8px' }}></i>
-                            Paragraph Ref:
-                          </span>
-                          <input 
-                            className="form-control"
-                            type="text"
-                            value={report.paragraphRef}
-                            onChange={(e) => {
-                              const updated = [...reports];
-                              updated[index] = { ...updated[index], paragraphRef: e.target.value };
-                              setReports(updated);
-                            }}
-                            placeholder="e.g., 3b or encl. (1)"
-                          />
-                        </div>
-                        
-                        <div style={{ marginTop: '0.75rem' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                            <input 
-                              type="checkbox"
-                              checked={report.exempt || false}
-                              onChange={(e) => {
-                                const updated = [...reports];
-                                updated[index] = { 
-                                  ...updated[index], 
-                                  exempt: e.target.checked,
-                                  controlSymbol: e.target.checked ? '' : updated[index].controlSymbol
-                                };
-                                setReports(updated);
-                              }}
-                              style={{ marginRight: '8px', transform: 'scale(1.2)', cursor: 'pointer' }}
-                            />
-                            <span style={{ fontSize: '0.95rem', fontWeight: '600' }}>
-                              <i className="fas fa-ban" style={{ marginRight: '6px', color: '#dc2626' }}></i>
-                              Mark as EXEMPT (no control symbol required)
-                            </span>
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                    
-                    <button 
-                      onClick={() => {
-                        const newReport: ReportData = {
-                          id: `report-${Date.now()}`,
-                          title: '',
-                          controlSymbol: '',
-                          paragraphRef: '',
-                          exempt: false
-                        };
-                        setReports([...reports, newReport]);
-                      }}
-                      style={{ 
-                        padding: '0.75rem 1.5rem', 
-                        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', 
-                        color: 'white', 
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        fontWeight: '600',
-                        fontSize: '1rem',
-                        transition: 'all 0.3s ease'
-                      }}
-                      onMouseEnter={(e) => {
-                        (e.target as HTMLButtonElement).style.transform = 'translateY(-2px)';
-                        (e.target as HTMLButtonElement).style.boxShadow = '0 4px 12px rgba(99, 102, 241, 0.4)';
-                      }}
-                      onMouseLeave={(e) => {
-                        (e.target as HTMLButtonElement).style.transform = 'translateY(0)';
-                        (e.target as HTMLButtonElement).style.boxShadow = 'none';
-                      }}
-                    >
-                      <i className="fas fa-plus" style={{ marginRight: '8px' }}></i>
-                      Add Report
-                    </button>
-                    
-                    {/* Preview Section */}
-                    {reports.length > 0 && (
-                      <div style={{ 
-                        marginTop: '1.5rem', 
-                        padding: '1rem', 
-                        background: 'linear-gradient(135deg, #f0f9ff, #e0f2fe)',
-                        borderRadius: '8px',
-                        border: '2px solid #3b82f6'
-                      }}>
-                        <strong style={{ display: 'block', marginBottom: '0.75rem', fontSize: '1.1rem', color: '#1e40af' }}>
-                          <i className="fas fa-eye" style={{ marginRight: '8px' }}></i>
-                          Preview:
-                        </strong>
-                        {shouldReportsBeInline(reports) ? (
-                          <div style={{ fontFamily: 'monospace', fontSize: '0.95rem', lineHeight: '1.6' }}>
-                            <div style={{ fontWeight: 'bold', marginBottom: '0.5rem' }}>Reports Required:</div>
-                            {reports.map((report, index) => (
-                              <div key={report.id} style={{ marginLeft: '2rem', marginBottom: '0.25rem' }}>
-                                {formatReportLine(report, index)}
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div>
-                            <div style={{ color: '#dc2626', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                              <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
-                              Reports Required: See Enclosure (2)
-                            </div>
-                            <div style={{ fontSize: '0.875rem', color: '#6b7280', fontStyle: 'italic' }}>
-                              (6+ reports will generate a separate "Reports Required" page with a table)
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </>
-              )}
-            </Card>
-
-          </div>
-          </div>
-
-          {/* Body Paragraphs Section */}
-          <div className="form-section">
-            <div className="section-legend">
-              <i className="fas fa-paragraph" style={{ marginRight: '8px' }}></i>
-              Body Paragraphs
-            </div>
-            
-            {/* Voice Input Information */}
-            <div style={{
-              backgroundColor: '#e3f2fd',
-              border: '1px solid #2196f3',
-              borderRadius: '8px',
-              padding: '12px',
-              marginBottom: '16px'
-            }}>
-              <div style={{ fontWeight: 'bold', color: '#1565c0', marginBottom: '8px' }}>
-                <i className="fas fa-microphone" style={{ marginRight: '8px' }}></i>
-                Voice Input Available
-              </div>
-              <div style={{ color: '#1565c0', fontSize: '0.9rem', lineHeight: '1.4' }}>
-                • Click <strong>Voice Input</strong> on any paragraph to start dictating<br/>
-                • Speak clearly and pause between sentences for best results<br/>
-                • Click <strong>Stop Recording</strong> or the button again to finish<br/>
-                • Works best in Chrome, Edge, and Safari browsers<br/>
-                • Requires microphone permission - allow when prompted
-              </div>
-            </div>
-            
-            <div>
-              {(() => {
-                const numberingErrors = validateParagraphNumbering(paragraphs);
-                if (numberingErrors.length > 0) {
-                  return (
-                    <div style={{
-                      backgroundColor: '#fff3cd',
-                      border: '1px solid #ffeaa7',
-                      borderRadius: '8px',
-                      padding: '12px',
-                      marginBottom: '16px'
-                    }}>
-                      <div style={{ fontWeight: 'bold', color: '#856404', marginBottom: '8px' }}>
-                        <i className="fas fa-exclamation-triangle" style={{ marginRight: '8px' }}></i>
-                        Paragraph Numbering Issues:
-                      </div>
-                      {numberingErrors.map((error, index) => (
-                        <div key={index} style={{ color: '#856404', fontSize: '0.9rem' }}>
-                          • {error}
-                        </div>
-                      ))}
-                      <div style={{ marginTop: '8px', fontSize: '0.85rem', color: '#6c757d' }}>
-                        <strong>Rule:</strong> If there's a paragraph 1a, there must be a paragraph 1b; if there's a paragraph 1a(1), there must be a paragraph 1a(2), etc.
-                      </div>
-                    </div>
-                  );
-                }
-                return null;
-              })()}
-              {paragraphs.map((paragraph, index) => {
-                const citation = getUiCitation(paragraph, index, paragraphs);
-                return (
-                  <div 
-                    key={paragraph.id} 
-                    className='paragraph-container'
-                    data-level={paragraph.level}
-                  >
-                    <div className="paragraph-header">
-                      <div>
-                        <span className="paragraph-level-badge">Level {paragraph.level} {citation}</span>
-                        {paragraph.title && (
-                          <span className="mandatory-title" style={{ 
-                            marginLeft: '12px', 
-                            fontWeight: 'bold', 
-                            color: paragraph.isMandatory ? '#0066cc' : '#28a745',
-                            fontSize: '0.9rem'
-                          }}>
-                            {paragraph.title}
-                          </span>
-                        )}
-                      </div>
-                      <div>
-                        {index > 0 && (
-                          <button 
-                            className="btn btn-sm" 
-                            style={{ background: '#f8f9fa', border: '1px solid #dee2e6', marginRight: '4px' }}
-                            onClick={() => moveParagraphUp(paragraph.id)}
-                            title="Move Up"
-                          >
-                            ↑
-                          </button>
-                        )}
-                        <button 
-                          className="btn btn-sm" 
-                          style={{ background: '#f8f9fa', border: '1px solid #dee2e6' }}
-                          onClick={() => moveParagraphDown(paragraph.id)} 
-                          disabled={index === paragraphs.length - 1}
-                          title="Move Down"
-                        >
-                          ↓
-                        </button>
-                      </div>
-                    </div>
-                    
-                    <textarea 
-                      className="form-control" 
-                      rows={4}
-                      placeholder={getParagraphPlaceholder(paragraph, formData.documentType)}
-                      value={paragraph.content}
-                      onChange={(e) => updateParagraphContent(paragraph.id, e.target.value)}
-                      style={{ marginBottom: '8px', flex: 1 }}
-                      ref={(el) => {
-                        if (el) {
-                          el.dataset.paragraphId = paragraph.id.toString();
-                        }
-                      }}
-                    />
-                    
-                    {/* Optional Admin & Logistics Subsections (MCO only) */}
-                    {paragraph.title === 'Administration and Logistics' && formData.documentType === 'mco' && (
-                      <div style={{ 
-                        marginTop: '16px', 
-                        padding: '16px', 
-                        backgroundColor: '#f9fafb', 
-                        borderRadius: '8px',
-                        border: '1px solid #e5e7eb'
-                      }}>
-                        <div style={{ 
-                          fontSize: '14px', 
-                          fontWeight: '600', 
-                          color: '#374151', 
-                          marginBottom: '12px' 
-                        }}>
-                          <i className="fas fa-plus-circle" style={{ marginRight: '8px' }}></i>
-                          Optional Sub-sections (MCO only):
-                        </div>
-                        
-                        {/* Add Buttons */}
-                        {(!adminSubsections.recordsManagement.show || !adminSubsections.privacyAct.show) && (
-                          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
-                            {!adminSubsections.recordsManagement.show && (
-                              <button
-                                type="button"
-                                onClick={addRecordsManagement}
-                                style={{
-                                  padding: '8px 16px',
-                                  backgroundColor: '#10b981',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  fontSize: '14px',
-                                  fontWeight: '500',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
-                              >
-                                <i className="fas fa-plus"></i>
-                                Add Records Management
-                              </button>
-                            )}
-                            
-                            {!adminSubsections.privacyAct.show && (
-                              <button
-                                type="button"
-                                onClick={addPrivacyAct}
-                                style={{
-                                  padding: '8px 16px',
-                                  backgroundColor: '#3b82f6',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '6px',
-                                  fontSize: '14px',
-                                  fontWeight: '500',
-                                  cursor: 'pointer',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '6px'
-                                }}
-                              >
-                                <i className="fas fa-plus"></i>
-                                Add Privacy Act Statement
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        
-                        {/* Records Management Subsection */}
-                        {adminSubsections.recordsManagement.show && (
-                          <div style={{ 
-                            marginBottom: '16px', 
-                            padding: '12px',
-                            backgroundColor: 'white',
-                            borderRadius: '6px',
-                            border: '2px solid #10b981'
-                          }}>
-                            <div style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center',
-                              marginBottom: '8px'
-                            }}>
-                              <div style={{ 
-                                fontWeight: 'bold', 
-                                color: '#10b981',
-                                fontSize: '14px'
-                              }}>
-                                4{getSubsectionLetter('recordsManagement')}. <u>Records Management</u>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={removeRecordsManagement}
-                                style={{
-                                  padding: '4px 12px',
-                                  backgroundColor: '#ef4444',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                <i className="fas fa-times"></i> Remove
-                              </button>
-                            </div>
-                            <textarea
-                              value={adminSubsections.recordsManagement.content}
-                              onChange={(e) => setAdminSubsections(prev => ({
-                                ...prev,
-                                recordsManagement: { ...prev.recordsManagement, content: e.target.value }
-                              }))}
-                              style={{
-                                width: '100%',
-                                minHeight: '80px',
-                                padding: '8px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '4px',
-                                fontSize: '14px',
-                                fontFamily: 'inherit',
-                                resize: 'vertical'
-                              }}
-                            />
-                          </div>
-                        )}
-                        
-                        {/* Privacy Act Subsection */}
-                        {adminSubsections.privacyAct.show && (
-                          <div style={{ 
-                            marginBottom: '16px', 
-                            padding: '12px',
-                            backgroundColor: 'white',
-                            borderRadius: '6px',
-                            border: '2px solid #3b82f6'
-                          }}>
-                            <div style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center',
-                              marginBottom: '8px'
-                            }}>
-                              <div style={{ 
-                                fontWeight: 'bold', 
-                                color: '#3b82f6',
-                                fontSize: '14px'
-                              }}>
-                                4{getSubsectionLetter('privacyAct')}. <u>Privacy Act Statement</u>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={removePrivacyAct}
-                                style={{
-                                  padding: '4px 12px',
-                                  backgroundColor: '#ef4444',
-                                  color: 'white',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  fontSize: '12px',
-                                  cursor: 'pointer'
-                                }}
-                              >
-                                <i className="fas fa-times"></i> Remove
-                              </button>
-                            </div>
-                            <textarea
-                              value={adminSubsections.privacyAct.content}
-                              onChange={(e) => setAdminSubsections(prev => ({
-                                ...prev,
-                                privacyAct: { ...prev.privacyAct, content: e.target.value }
-                              }))}
-                              style={{
-                                width: '100%',
-                                minHeight: '80px',
-                                padding: '8px',
-                                border: '1px solid #d1d5db',
-                                borderRadius: '4px',
-                                fontSize: '14px',
-                                fontFamily: 'inherit',
-                                resize: 'vertical'
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {/* END OF ADDED CODE */}
-                    
-              
-
-                    {/* Voice Input and Underline buttons */}
-                    <div style={{ marginBottom: '12px', display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
-                      {/* Voice Input Button */}
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          background: isListening && currentListeningParagraph === paragraph.id ? '#dc3545' : '#28a745', 
-                          border: `1px solid ${isListening && currentListeningParagraph === paragraph.id ? '#dc3545' : '#28a745'}`, 
-                          color: 'white',
-                          fontSize: '0.85rem',
-                          minWidth: '120px',
-                          animation: isListening && currentListeningParagraph === paragraph.id ? 'pulse 1.5s infinite' : 'none'
-                        }}
-                        onClick={() => startVoiceInput(paragraph.id)}
-                        title={isListening && currentListeningParagraph === paragraph.id ? 'Click to stop recording' : 'Click to start voice input'}
-                      >
-                        <i className={`fas ${isListening && currentListeningParagraph === paragraph.id ? 'fa-stop' : 'fa-microphone'}`} style={{ marginRight: '6px' }}></i>
-                        {isListening && currentListeningParagraph === paragraph.id ? 'Stop Recording' : 'Voice Input'}
-                      </button>
-                      
-                      {/* Clear Content Button */}
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          background: '#ffc107', 
-                          border: '1px solid #ffc107', 
-                          color: '#000',
-                          fontSize: '0.85rem'
-                        }}
-                        onClick={() => clearParagraphContent(paragraph.id)}
-                        title="Clear paragraph content"
-                        disabled={!paragraph.content.trim()}
-                      >
-                        <i className="fas fa-eraser" style={{ marginRight: '6px' }}></i>
-                        Clear
-                      </button>
-                      
-                      {/* Underline Button */}
-                      <button 
-                        className="btn btn-sm" 
-                        style={{ 
-                          background: '#fff3cd', 
-                          border: '1px solid #ffeaa7', 
-                          color: '#856404',
-                          fontSize: '0.85rem'
-                        }}
-                        onClick={() => {
-                          const textarea = document.querySelector(`textarea[data-paragraph-id="${paragraph.id}"]`) as HTMLTextAreaElement;
-                          if (textarea) {
-                            handleUnderlineText(paragraph.id, textarea);
-                          }
-                        }}
-                        title="Underline selected text"
-                      >
-                        <u>U</u> Underline
-                      </button>
-                      
-                      <div style={{ fontSize: '0.75rem', color: '#6c757d', flex: '1', minWidth: '200px' }}>
-                        {isListening && currentListeningParagraph === paragraph.id ? (
-                          <span style={{ color: '#dc3545', fontWeight: 'bold' }}>
-                            <i className="fas fa-circle" style={{ marginRight: '4px', fontSize: '0.6rem' }}></i>
-                            Listening... Speak now
-                          </span>
-                        ) : (
-                          'Click Voice Input to dictate, select text and click Underline for formatting'
-                        )}
-                      </div>
-                    </div>
-                    
-                    <div>
-                      <button 
-                        className="btn btn-smart-main btn-sm" 
-                        onClick={() => addParagraph('main', paragraph.id)}
-                      >
-                        Main Paragraph
-                      </button>
-                      {paragraph.level < 8 && (
-                        <button 
-                          className="btn btn-smart-sub btn-sm" 
-                          onClick={() => addParagraph('sub', paragraph.id)}
-                        >
-                          Sub-paragraph
-                        </button>
-                      )}
-                      
-                      {paragraph.level > 1 && (
-                        <button 
-                          className="btn btn-smart-same btn-sm" 
-                          onClick={() => addParagraph('same', paragraph.id)}
-                        >
-                          Same
-                        </button>
-                      )}
-                      
-                      {paragraph.level > 2 && (
-                        <button 
-                          className="btn btn-smart-up btn-sm" 
-                          onClick={() => addParagraph('up', paragraph.id)}
-                        >
-                          One Up
-                        </button>
-                      )}
-                      
-                      {(!paragraph.isMandatory || paragraph.title === 'Cancellation') && paragraph.id !== 1 && (
-                        <button 
-                          className="btn btn-danger btn-sm" 
-                          onClick={() => removeParagraph(paragraph.id)}
-                          style={{ marginLeft: '8px' }}
-                          title="Delete paragraph"
-                        >
-                          Delete
-                        </button>
-                      )}
-
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            
-          </div>
-
-          {/* Closing Block Section */}
-          <div className="form-section">
-            <div className="section-legend">
-              <i className="fas fa-signature" style={{ marginRight: '8px' }}></i>
-              Closing Block
-            </div>
-            
-            <div className="input-group">
-              <span className="input-group-text">
-                <i className="fas fa-pen-fancy" style={{ marginRight: '8px' }}></i>
-                Signature Name:
-              </span>
-              <input 
-                className="form-control" 
-                type="text" 
-                placeholder="F. M. LASTNAME"
-                value={formData.sig}
-                onChange={(e) => setFormData(prev => ({ ...prev, sig: autoUppercase(e.target.value) }))}
-              />
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ display: 'block', fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                <i className="fas fa-user-tie" style={{ marginRight: '8px' }}></i>
-                Delegation of Signature Authority?
-              </label>
-              <div className="radio-group">
-                <label style={{ display: 'flex', alignItems: 'center' }}>
-                  <input 
-                    type="radio" 
-                    name="ifDelegation" 
-                    value="yes" 
-                    checked={showDelegation}
-                    onChange={() => setShowDelegation(true)}
-                    style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                  />
-                  <span style={{ fontSize: '1.1rem' }}>Yes</span>
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center' }}>
-                  <input 
-                    type="radio" 
-                    name="ifDelegation" 
-                    value="no" 
-                    checked={!showDelegation}
-                    onChange={() => setShowDelegation(false)}
-                    style={{ marginRight: '8px', transform: 'scale(1.25)' }}
-                  />
-                  <span style={{ fontSize: '1.1rem' }}>No</span>
-                </label>
-              </div>
-
-              {showDelegation && (
-                <div className="dynamic-section">
-                  <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                    <i className="fas fa-user-tie" style={{ marginRight: '8px' }}></i>
-                    Delegation Authority Type:
-                  </label>
-                  
-                  <div style={{ marginBottom: '1rem' }}>
-                    <select 
-                      className="form-control" 
-                      style={{ marginBottom: '8px' }}
-                      onChange={(e) => updateDelegationType(e.target.value)}
-                    >
-                      <option value="">Select delegation type...</option>
-                      <option value="by_direction">By direction</option>
-                      <option value="acting_commander">Acting for Commander/CO/OIC</option>
-                      <option value="acting_title">Acting for Official by Title</option>
-                      <option value="signing_for">Signing "For" an Absent Official</option>
-                      <option value="custom">Custom</option>
-                    </select>
-                  </div>
-
-                  <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ display: 'block', fontWeight: '600', marginBottom: '0.5rem' }}>
-                      <i className="fas fa-edit" style={{ marginRight: '8px' }}></i>
-                      Delegation Text Lines:
-                    </label>
-                    
-                    {formData.delegationText.map((line, index) => (
-                      <div key={index} style={{ display: 'flex', marginBottom: '8px', alignItems: 'center' }}>
-                        <input 
-                          className="form-control" 
-                          type="text" 
-                          placeholder={`Enter delegation text line ${index + 1} (e.g., By direction, Acting, etc.)`}
-                          value={line}
-                          onChange={(e) => updateDelegationLine(index, e.target.value)}
-                          style={{ marginRight: '8px' }}
-                        />
-                        {formData.delegationText.length > 1 && (
-                          <button
-                            type="button"
-                            className="btn btn-outline-danger btn-sm"
-                            onClick={() => removeDelegationLine(index)}
-                            style={{ minWidth: '40px' }}
-                          >
-                            <i className="fas fa-trash"></i>
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                    
-                    <button
-                      type="button"
-                      className="btn btn-outline-primary btn-sm"
-                      onClick={addDelegationLine}
-                      style={{ marginTop: '8px' }}
-                    >
-                      <i className="fas fa-plus" style={{ marginRight: '4px' }}></i>
-                      Add Delegation Line
-                    </button>
-                  </div>
-                  
-                  <div style={{ 
-                    marginTop: '12px', 
-                    padding: '12px', 
-                    backgroundColor: 'rgba(23, 162, 184, 0.1)', 
-                    borderRadius: '8px', 
-                    border: '1px solid #17a2b8',
-                    fontSize: '0.85rem'
-                  }}>
-                    <strong style={{ color: '#17a2b8' }}>
-                      <i className="fas fa-info-circle" style={{ marginRight: '4px' }}></i>
-                      Examples:
-                    </strong>
-                    <br />
-                    <div style={{ marginTop: '4px', color: '#17a2b8' }}>
-                      • <strong>By direction:</strong> For routine correspondence when specifically authorized<br />
-                      • <strong>Acting:</strong> When temporarily succeeding to command or appointed to replace an official<br />
-                      • <strong>Deputy Acting:</strong> For deputy positions acting in absence<br />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* ADD THIS ENTIRE PCN/COPY TO SECTION HERE */}
-            <Card style={{ marginBottom: '1.5rem' }}>
-              <CardHeader>
-                <CardTitle style={{ fontSize: '1.1rem', fontWeight: 'bold', display: 'flex', alignItems: 'center' }}>
-                  <i className="fas fa-share-nodes" style={{ marginRight: '8px' }}></i>
-                  Distribution Format (PCN / Copy To)
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {/* Yes/No Toggle */}
-                <div style={{ display: 'flex', gap: '24px', marginBottom: '16px' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="showPCNDistribution"
-                      checked={showDistribution}
-                      onChange={() => setShowDistribution(true)}
-                      style={{ marginRight: '8px', transform: 'scale(1.2)' }}
-                    />
-                    <span style={{ fontSize: '16px', fontWeight: '500' }}>Yes</span>
-                  </label>
-                  <label style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}>
-                    <input
-                      type="radio"
-                      name="showPCNDistribution"
-                      checked={!showDistribution}
-                      onChange={() => { 
-                        setShowDistribution(false); 
-                        setDistributionType('none');
-                        setPcn('');
-                        setCopyToList([]);
-                      }}
-                      style={{ marginRight: '8px', transform: 'scale(1.2)' }}
-                    />
-                    <span style={{ fontSize: '16px', fontWeight: '500' }}>No</span>
-                  </label>
-                </div>
-
-                {showDistribution && (
-                  <div>
-                    {/* Distribution Type Selector */}
-                    <div style={{ 
-                      padding: '16px', 
-                      backgroundColor: '#f9fafb', 
-                      borderRadius: '8px',
-                      border: '1px solid #e5e7eb',
-                      marginBottom: '16px'
-                    }}>
-                      <div style={{ 
-                        fontSize: '14px', 
-                        fontWeight: '600', 
-                        color: '#374151', 
-                        marginBottom: '12px' 
-                      }}>
-                        Select Distribution Format:
-                      </div>
-                      
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                        {/* PCN Only */}
-                        <label style={{ display: 'flex', alignItems: 'flex-start', cursor: 'pointer' }}>
-                          <input
-                            type="radio"
-                            name="distributionType"
-                            value="pcn-only"
-                            checked={distributionType === 'pcn-only'}
-                            onChange={(e) => setDistributionType(e.target.value as any)}
-                            style={{ marginRight: '8px', marginTop: '2px' }}
-                          />
-                          <div>
-                            <div style={{ fontWeight: '500' }}>PCN Only</div>
-                            <div style={{ fontSize: '12px', color: '#6b7280', marginLeft: '0px' }}>
-                              Shows: DISTRIBUTION: PCN 10207570000
-                            </div>
-                          </div>
-                        </label>
-                        
-                        {/* PCN with Copy To */}
-                        <label style={{ display: 'flex', alignItems: 'flex-start', cursor: 'pointer' }}>
-                          <input
-                            type="radio"
-                            name="distributionType"
-                            value="pcn-with-copy"
-                            checked={distributionType === 'pcn-with-copy'}
-                            onChange={(e) => setDistributionType(e.target.value as any)}
-                            style={{ marginRight: '8px', marginTop: '2px' }}
-                          />
-                          <div>
-                            <div style={{ fontWeight: '500' }}>PCN with Copy To List</div>
-                            <div style={{ fontSize: '12px', color: '#6b7280', marginLeft: '0px' }}>
-                              Shows: DISTRIBUTION: PCN<br/>
-                              &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Copy to: 8145001 (2)
-                            </div>
-                          </div>
-                        </label>
-                      </div>
-                    </div>
-
-                    {/* PCN Input Field */}
-                    {(distributionType === 'pcn-only' || distributionType === 'pcn-with-copy') && (
-                      <div style={{ marginBottom: '16px' }}>
-                        <label style={{ 
-                          display: 'block', 
-                          marginBottom: '8px', 
-                          fontWeight: '500',
-                          color: '#374151'
-                        }}>
-                          Publication Control Number (PCN):
-                        </label>
-                        <input
-                          type="text"
-                          className="form-control"
-                          value={pcn}
-                          onChange={(e) => {
-                            const value = e.target.value;
-                            if (value === '' || (/^\d{0,11}$/.test(value))) {
-                              setPcn(value);
-                            }
-                          }}
-                          placeholder="Enter 11-digit PCN (e.g., 10207570000)"
-                          maxLength={11}
-                          style={{
-                            fontFamily: 'monospace',
-                            fontSize: '16px',
-                            letterSpacing: '1px'
-                          }}
-                        />
-                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '4px' }}>
-                          {pcn.length}/11 digits {pcn.length === 11 ? '✓' : ''}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Copy To List */}
-                    {distributionType === 'pcn-with-copy' && (
-                      <div style={{ 
-                        padding: '16px', 
-                        backgroundColor: '#f0fdf4', 
-                        borderRadius: '8px',
-                        border: '2px solid #86efac',
-                        marginBottom: '16px'
-                      }}>
-                        <div style={{ 
-                          fontSize: '14px', 
-                          fontWeight: '600', 
-                          color: '#166534', 
-                          marginBottom: '12px' 
-                        }}>
-                          Copy to Distribution Codes:
-                        </div>
-                        
-                        {copyToList.map((item, index) => (
-                          <div key={index} style={{ 
-                            display: 'flex', 
-                            gap: '12px', 
-                            marginBottom: '12px',
-                            alignItems: 'center'
-                          }}>
-                            <div style={{ flex: 1 }}>
-                              <input
-                                type="text"
-                                className="form-control"
-                                value={item.code}
-                                onChange={(e) => updateCopyToCode(index, e.target.value)}
-                                placeholder="7-digit code (e.g., 8145001)"
-                                maxLength={7}
-                                style={{
-                                  fontFamily: 'monospace',
-                                  fontSize: '14px'
-                                }}
-                              />
-                            </div>
-                            <div style={{ width: '100px' }}>
-                              <input
-                                type="number"
-                                className="form-control"
-                                value={item.qty}
-                                onChange={(e) => updateCopyToQty(index, parseInt(e.target.value) || 1)}
-                                min={1}
-                                max={99}
-                                placeholder="Qty"
-                                style={{
-                                  fontFamily: 'monospace',
-                                  fontSize: '14px'
-                                }}
-                              />
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => removeCopyToEntry(index)}
-                              style={{
-                                padding: '6px 12px',
-                                backgroundColor: '#ef4444',
-                                color: 'white',
-                                border: 'none',
-                                borderRadius: '4px',
-                                fontSize: '12px',
-                                cursor: 'pointer'
-                              }}
-                            >
-                              <i className="fas fa-times"></i>
-                            </button>
-                          </div>
-                        ))}
-                        
-                        <button
-                          type="button"
-                          onClick={addCopyToEntry}
-                          style={{
-                            padding: '8px 16px',
-                            backgroundColor: '#10b981',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '6px',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px'
-                          }}
-                        >
-                          <i className="fas fa-plus"></i>
-                          Add Distribution Code
-                        </button>
-                        
-                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '8px' }}>
-                          Format: 7-digit code with quantity (1-99)
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            {/* END OF NEW PCN/COPY TO SECTION */}
-
-          </div>
-          
-          {/* Saved Letters Section */}
-          {savedLetters.length > 0 && (
-            <div className="form-section">
+            {currentStep === 2 && (
+              // Render only the Unit Information part of Step2HeaderInfo
+              <div className="form-section">
                 <div className="section-legend">
-                    <i className="fas fa-save" style={{ marginRight: '8px' }}></i>
-                    Saved Versions
+                  <i className="fas fa-sitemap" style={{ marginRight: '8px' }}></i>
+                  Unit Information
                 </div>
-                {savedLetters.map(letter => (
-                    <div key={letter.id} className="saved-letter-item">
-                        <div className="saved-letter-info">
-                            <strong>{letter.subj || "Untitled"}</strong>
-                            <small>Saved: {letter.savedAt}</small>
-                        </div>
-                        <div className="saved-letter-actions">
-                            <button className="btn btn-sm btn-success" onClick={() => loadLetter(letter)}>
-                              <i className="fas fa-upload" style={{ marginRight: '4px' }}></i>
-                              Load
-                            </button>
-                        </div>
-                    </div>
-                ))}
+                <CardContent>
+                  <div className="input-group">
+                    <span className="input-group-text">Find Unit:</span>
+                    <Combobox
+                      items={unitComboboxData}
+                      onSelect={handleUnitSelect}
+                      placeholder="Search for a unit..."
+                      searchMessage="No unit found."
+                      inputPlaceholder="Search units by name, RUC, MCC..."
+                    />
+                    <button className="btn btn-danger" type="button" onClick={clearUnitInfo}>
+                      Clear
+                    </button>
+                  </div>
+                  <div className="input-group">
+                    <span className="input-group-text">Unit Name:</span>
+                    <input className="form-control" type="text" value={formData.line1} placeholder="e.g., HEADQUARTERS, 1ST MARINE DIVISION" onChange={(e) => setFormData(prev => ({...prev, line1: e.target.value.toUpperCase()}))} />
+                  </div>
+                  <div className="input-group">
+                    <span className="input-group-text">Address Line 1:</span>
+                    <input className="form-control" type="text" value={formData.line2} placeholder="e.g., BOX 5555" onChange={(e) => setFormData(prev => ({...prev, line2: e.target.value.toUpperCase()}))} />
+                  </div>
+                  <div className="input-group">
+                    <span className="input-group-text">Address Line 2:</span>
+                    <input className="form-control" type="text" value={formData.line3} placeholder="e.g., CAMP PENDLETON, CA 92055-5000" onChange={(e) => setFormData(prev => ({...prev, line3: e.target.value.toUpperCase()}))} />
+                  </div>
+                </CardContent>
+              </div>
+            )}
+
+            {currentStep === 3 && (
+              // Render only the Header Information part of Step2HeaderInfo
+              <Step3Header formData={formData} />
+            )}
+            
+            {currentStep === 4 && (
+              // Render only the Optional Items part of Step3Content
+              <Step4Optional formData={formData} references={references} enclosures={enclosures} reports={reports} />
+            )}
+
+            {currentStep === 5 && (
+              // Render only the Body Paragraphs part of Step3Content
+              <Step5Body formData={formData} paragraphs={paragraphs} adminSubsections={adminSubsections} isListening={isListening} currentListeningParagraph={currentListeningParagraph} numberingErrors={validateParagraphNumbering(paragraphs)} />
+            )}
+
+            {currentStep === 6 && (
+              // Render only the Closing Block part of Step4Final
+              <Step6Closing formData={formData} />
+            )}
+
+            {currentStep === 7 && (
+              // Render only the Distribution part of Step4Final
+              <Step7Distribution pcn={pcn} distributionType={distributionType} copyToList={copyToList} />
+            )}
+
+            {currentStep === 8 && (
+              // Render only the Review/Generate part of Step4Final
+              <Step8Review isGenerating={isGenerating} previewContent={generatePreviewContent()} />
+            )}
+
+            {/* Navigation Buttons */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              marginTop: '40px',
+              paddingTop: '24px',
+              borderTop: '2px solid #e5e7eb'
+            }}>
+              <button
+                type="button"
+                onClick={handlePrevious}
+                disabled={currentStep === 1}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '1rem',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  border: 'none',
+                  backgroundColor: currentStep === 1 ? '#e5e7eb' : '#6b7280',
+                  color: 'white',
+                  cursor: currentStep === 1 ? 'not-allowed' : 'pointer',
+                  opacity: currentStep === 1 ? 0.5 : 1
+                }}
+              >
+                <i className="fas fa-arrow-left" style={{ marginRight: '8px' }}></i>
+                Previous Step
+              </button>
+
+              <button
+                type="button"
+                onClick={handleContinue}
+                disabled={!stepValidation[`step${currentStep}` as keyof typeof stepValidation]}
+                style={{
+                  padding: '12px 24px',
+                  fontSize: '1rem',
+                  fontWeight: '600',
+                  borderRadius: '8px',
+                  border: 'none',
+                  background: stepValidation[`step${currentStep}` as keyof typeof stepValidation]
+                    ? 'linear-gradient(45deg, #C8102E, #FFD700)'
+                    : '#e5e7eb',
+                  color: 'white',
+                  cursor: stepValidation[`step${currentStep}` as keyof typeof stepValidation]
+                    ? 'pointer'
+                    : 'not-allowed',
+                  opacity: stepValidation[`step${currentStep}` as keyof typeof stepValidation] ? 1 : 0.5
+                }}
+              >
+                {currentStep === 8 ? 'Complete' : 'Continue'}
+                <i className={`fas fa-arrow-${currentStep === 8 ? 'check' : 'right'}`} style={{ marginLeft: '8px' }}></i>
+              </button>
             </div>
-          )}
-
-
-
-          {/* Generate Button */}
-          <div style={{ textAlign: 'center' }}>
-            <button 
-              className="generate-btn" 
-              onClick={generateDocument} 
-              disabled={isGenerating}
-            >
-              {isGenerating ? (
-                <>
-                  <span style={{ 
-                    display: 'inline-block', 
-                    width: '20px', 
-                    height: '20px', 
-                    border: '2px solid white', 
-                    borderTop: '2px solid transparent', 
-                    borderRadius: '50%', 
-                    animation: 'spin 1s linear infinite',
-                    marginRight: '8px'
-                  }}></span>
-                  Generating Document...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-file-download" style={{ marginRight: '8px' }}></i>
-                  Generate Document
-                </>
-              )}
-            </button>
           </div>
 
           {/* Footer */}
@@ -6536,206 +4626,45 @@ const clearParagraphContent = (paragraphId: number) => {
                 Connect with Semper Admin
               </a>
             </p>
-      </div>
-    </div>
-    {/* Floating Preview Button */}
-        <button
-          type="button"
-          onClick={() => setShowPreview(true)}
-          className="btn btn-primary"
-          style={{
-            position: 'fixed',
-            bottom: '30px',
-            right: '30px',
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-            zIndex: 1000,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 0
-          }}
-          title="Preview Document"
-        >
-          <i className="fas fa-eye" style={{ fontSize: '24px' }}></i>
-        </button>
-
-        {/* Preview Modal */}
-        {showPreview && (
-          <div 
-            style={{
-              position: 'fixed',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.7)',
-              zIndex: 2000,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '20px'
-            }}
-            onClick={() => setShowPreview(false)}
-          >
-            <div 
-              style={{
-                backgroundColor: 'white',
-                borderRadius: '12px',
-                maxWidth: '1000px',
-                width: '100%',
-                maxHeight: '90vh',
-                display: 'flex',
-                flexDirection: 'column',
-                boxShadow: '0 10px 40px rgba(0,0,0,0.3)'
-              }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div style={{
-                padding: '20px',
-                borderBottom: '2px solid #dee2e6',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 'bold' }}>
-                  Document Preview
-                </h2>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <button
-                    type="button"
-                    onClick={generateDocument}
-                    className="btn btn-success"
-                  >
-                    <i className="fas fa-download" style={{ marginRight: '8px' }}></i>
-                    Export from Preview
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowPreview(false)}
-                    className="btn btn-secondary"
-                  >
-                    <i className="fas fa-times" style={{ marginRight: '8px' }}></i>
-                    Close
-                  </button>
-                </div>
-              </div>
-
-              <div style={{
-                flex: 1,
-                overflowY: 'auto',
-                padding: '30px',
-                backgroundColor: '#f5f5f5'
-              }}>
-                <div style={{
-                  backgroundColor: 'white',
-                  width: '8.5in',
-                  minHeight: '11in',
-                  margin: '0 auto',
-                  padding: '1in',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)',
-                  fontFamily: formData.bodyFont === 'courier' ? 'Courier New, monospace' : 'Times New Roman, serif',
-                  fontSize: '12pt',
-                  lineHeight: '1.5'
-                }}>
-                  <div style={{ 
-                    textAlign: 'center', 
-                    marginBottom: '30px',
-                    paddingBottom: '20px',
-                    borderBottom: '2px solid black'
-                  }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '14pt', marginBottom: '10px' }}>
-                      DEPARTMENT OF THE NAVY
-                    </div>
-                    <div style={{ fontWeight: 'bold', fontSize: '14pt', marginBottom: '10px' }}>
-                      HEADQUARTERS UNITED STATES MARINE CORPS
-                    </div>
-                    <div style={{ fontSize: '12pt', marginBottom: '20px' }}>
-                      3000 MARINE CORPS PENTAGON<br/>
-                      WASHINGTON, DC 20350-3000
-                    </div>
-                    <div style={{ textAlign: 'right', fontSize: '12pt' }}>
-                      {generatePreviewContent().header.ssic && (
-                        <>
-                          {formData.documentType === 'mco' ? 'MCO' : 'MCBul'} {generatePreviewContent().header.ssic}<br/>
-                          {generatePreviewContent().header.sponsor}<br/>
-                          {generatePreviewContent().header.date}
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div style={{ 
-                    fontWeight: 'bold',
-                    textTransform: 'uppercase',
-                    marginBottom: '30px',
-                    textAlign: 'center'
-                  }}>
-                    {formData.documentType === 'mco' ? 'MARINE CORPS ORDER' : 'MARINE CORPS BULLETIN'}
-                  </div>
-
-                  <div style={{ marginBottom: '30px' }}>
-                    {generatePreviewContent().from && (
-                      <div style={{ marginBottom: '10px' }}>
-                        <span style={{ fontWeight: 'bold' }}>From:</span> {generatePreviewContent().from}
-                      </div>
-                    )}
-                    <div style={{ marginBottom: '10px' }}>
-                      <span style={{ fontWeight: 'bold' }}>To:</span> Distribution List
-                    </div>
-                    <div style={{ marginBottom: '10px' }}>
-                      <span style={{ fontWeight: 'bold' }}>Subj:</span> {generatePreviewContent().subject}
-                    </div>
-                  </div>
-
-                  <div>
-                  {generatePreviewContent().paragraphs.length > 0 ? (
-                    generatePreviewContent().paragraphs.map((para: any) => (
-                      <div 
-                        key={para.id}
-                        style={{ 
-                          marginBottom: '15px',
-                          marginLeft: `${para.level * 0.5}in`
-                        }}
-                      >
-                        <div style={{ whiteSpace: 'pre-wrap' }}>
-                          <strong>{para.citation}</strong> {para.content}
-                        </div>
-                      </div>
-                    ))
-                    ) : (
-                      <div style={{ 
-                        textAlign: 'center', 
-                        color: '#6c757d',
-                        padding: '40px',
-                        fontStyle: 'italic'
-                      }}>
-                        No content to preview. Add paragraphs to see them here.
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{
-                    marginTop: '40px',
-                    paddingTop: '20px',
-                    borderTop: '2px solid black',
-                    textAlign: 'center',
-                    fontSize: '10pt',
-                    color: '#666'
-                  }}>
-                    Page 1 • Generated on {new Date().toLocaleDateString('en-US', { 
-                      year: 'numeric', 
-                      month: 'long', 
-                      day: 'numeric' 
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
-        )}
-  </div>
-);
+        </div>
+      </div>
+
+          {/* Footer */}
+          <div style={{ 
+            marginTop: '32px', 
+            textAlign: 'center', 
+            fontSize: '0.875rem', 
+            color: '#6c757d' 
+          }}>
+            <p>
+              <i className="fas fa-shield-alt" style={{ marginRight: '4px' }}></i>
+              DoD Seal automatically included • Format compliant with SECNAV M-5216.5
+            </p>
+            <p style={{ marginTop: '8px' }}>
+              <a href="https://linktr.ee/semperadmin" target="_blank" rel="noopener noreferrer" style={{ color: '#b8860b', textDecoration: 'none' }}>
+                Connect with Semper Admin
+              </a>
+            </p>
+          </div>
+
+    </div></>
+  );
 }
+
+const updateCopyToCode = (index: number, code: string, setCopyToList: React.Dispatch<React.SetStateAction<Array<{ code: string; qty: number }>>>) => {
+  // Only allow 7-digit numeric codes
+  if (code === '' || (/^\d{0,7}$/.test(code))) {
+    setCopyToList(prev => prev.map((item, i) => i === index ? { ...item, code } : item));
+  }
+};
+
+const updateCopyToQty = (index: number, qty: number, setCopyToList: React.Dispatch<React.SetStateAction<Array<{ code: string; qty: number }>>>) => {
+  // Only allow quantities 1-99
+  if (qty >= 1 && qty <= 99) {
+    setCopyToList(prev => prev.map((item, i) => i === index ? { ...item, qty } : item));
+  }
+};
+
+const addRecordsManagementParagraph = () => {};
+const addPrivacyActParagraph = () => {};

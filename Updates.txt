@@ -1,6 +1,6 @@
 Areas of focus:
-3. Reference Length Validation
-4. Reference Continuation After (z) - take this concept for the lettered subparagraphs as we will not have more then 13 references. 
-5. PCN Line Addition
-6. "Reports Required" Section - optional section
-7. Permanent Admin/Log Text - for orders only
+8. Page preview popup 
+
+
+
+
