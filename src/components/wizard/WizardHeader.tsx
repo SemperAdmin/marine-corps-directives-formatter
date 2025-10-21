@@ -66,7 +66,7 @@ export const WizardHeader: React.FC<WizardHeaderProps> = ({
           🦅 MARINE CORPS DIRECTIVES FORMATTER
         </h1>
         <p style={{ fontSize: '0.875rem', color: '#6c757d', margin: 0 }}>
-          by Semper Admin | Last Updated: 20251013
+          by Semper Admin | Last Updated: 20251020
         </p>
       </div>
 
