@@ -4619,7 +4619,7 @@ const clearUnitInfo = () => {
           }}>
             <p>
               <i className="fas fa-shield-alt" style={{ marginRight: '4px' }}></i>
-              DoD Seal automatically included • Format compliant with SECNAV M-5216.5
+              DoW Seal automatically included • Format compliant with SECNAV M-5216.5
             </p>
             <p style={{ marginTop: '8px' }}>
               <a href="https://linktr.ee/semperadmin" target="_blank" rel="noopener noreferrer" style={{ color: '#b8860b', textDecoration: 'none' }}>
