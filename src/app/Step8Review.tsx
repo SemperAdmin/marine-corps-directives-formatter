@@ -117,6 +117,7 @@ const paginateContent = (previewContent: PreviewContent) => {
   const pages: React.ReactNode[][] = [];
   let currentPageContent: React.ReactNode[] = [];
   let currentPageHeight = 0;
+  let keyCounter = 0; // Added for unique keys in the paginated content
 
   const PAGE_HEIGHT_IN_PX = 864; // 9 inches of content area (11in - 1in top - 1in bottom) * 96px/in
   const LINE_HEIGHT_PX = 20; // Approx height for 12pt font with 1.2 line-height
@@ -127,8 +128,8 @@ const paginateContent = (previewContent: PreviewContent) => {
       pages.push(currentPageContent);
       currentPageContent = [];
       currentPageHeight = 0;
-    }
-    currentPageContent.push(component);
+    }    
+    currentPageContent.push(<React.Fragment key={`content-item-${keyCounter++}`}>{component}</React.Fragment>);
     currentPageHeight += estimatedHeight;
   };
 
