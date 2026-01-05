@@ -1850,6 +1850,7 @@ export const UNITS: Unit[] = [
     {"ruc": "88654", "mcc": "TME", "uic": "M20080", "unitName": "MARFOR JAPAN", "streetAddress": "UNIT 5068", "cityState": "APO AP", "zip": "96328-5068"},
     {"ruc": "59901", "mcc": "TMH", "uic": "M20800", "unitName": "MARFOR KOREA", "streetAddress": "UNIT 15708", "cityState": "APO AP", "zip": "96251-0085"},
     {"ruc": "88652", "mcc": "TMH", "uic": "M20800", "unitName": "MARFOR KOREA", "streetAddress": "UNIT 15708", "cityState": "APO AP", "zip": "96251-0085"},
+    {"ruc": "59901", "mcc": "TMH", "uic": "M20800", "unitName": "UNITED STATES MARINE CORPS FORCES KOREA", "streetAddress": "OPC 371 BOX 76", "cityState": "APO AP", "zip": "96271-9001"},
     {"ruc": "88830", "mcc": "Q24", "uic": "M20800", "unitName": "MARFOR KOREA (MMSL)", "streetAddress": "UNIT 15708", "cityState": "APO AP", "zip": "96251-0085"},
     {"ruc": "54028", "mcc": "Q24", "uic": "M20800", "unitName": "MARFOR KOREA (MMSL)", "streetAddress": "UNIT 15708", "cityState": "APO AP", "zip": "96251-0085"},
     {"ruc": "88739", "mcc": "1HQ", "uic": "M20050", "unitName": "MARFOR NORTHCOM", "streetAddress": "615 CHESTNUT STREET", "cityState": "PHILADELPHIA PA", "zip": "19106-4404"},

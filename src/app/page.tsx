@@ -3715,7 +3715,7 @@ if (enclosures && enclosures.length > 0) {
 };
 
 const unitComboboxData = UNITS.map(unit => ({
-  value: `${unit.uic}-${unit.ruc}-${unit.mcc}`,
+  value: `${unit.uic}-${unit.ruc}-${unit.mcc}-${unit.streetAddress}-${unit.zip}`,
   label: `${unit.unitName} (RUC: ${unit.ruc}, MCC: ${unit.mcc})`,
   ...unit,
 }));
